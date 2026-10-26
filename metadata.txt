@@ -1,0 +1,17 @@
+[general]
+name=QRibbonSkin
+qgisMinimumVersion=4.0
+qgisMaximumVersion=4.99
+description=Reversible QGIS-menu-based ribbon and light styling for native QGIS panels. No geoprocessing changes.
+description[pt_BR]=Interface Ribbon baseada nos menus nativos do QGIS 4.x, com suporte ao Editor de Layout e Georreferenciador.
+about=QRibbonSkin 1.0.0 provides a reversible ribbon interface for QGIS 4.x, including dedicated interfaces for the Layout Designer and Georeferencer. Supports English and Brazilian Portuguese, follows the QGIS UI language, and reuses native QGIS actions and algorithms. Inspired by ArcSkin with attribution and GPL licensing.
+about[pt_BR]=QRibbonSkin 1.0.0 oferece uma interface Ribbon reversível para QGIS 4.x, incluindo o Editor de Layout e o Georreferenciador. Compatível com português brasileiro e inglês e com os comandos e algoritmos nativos do QGIS. Inspirado no ArcSkin, com os créditos e a licença GPL preservados.
+version=1.0.0
+author=QRibbonSkin contributors (with ArcSkin attribution)
+experimental=False
+deprecated=False
+server=False
+category=Plugins
+tags=ribbon,interface,skin,qt6,qgis4,gui
+icon=resources/qribbonskin.svg
+changelog=1.0.0 - Primeira versão estável, homologada em QGIS 4.0 no Windows 10, QGIS 4.2.2 no Windows 11 e QGIS 4.2.3 Flatpak no Ubuntu Linux. Sem alterações no código funcional.

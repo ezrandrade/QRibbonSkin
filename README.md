@@ -1,51 +1,41 @@
 # QRibbonSkin 1.0.0
 
-## Português (Brasil)
+O **QRibbonSkin** oferece ao QGIS 4.x uma interface de guias no estilo Ribbon, reversível, construída a partir dos comandos nativos do QGIS. Não substitui nem altera os algoritmos de geoprocessamento.
 
-O **QRibbonSkin** é um complemento para QGIS 4.x que organiza as ferramentas nativas e de extensões em uma interface reversível no estilo Ribbon, preservando os comandos e algoritmos originais do QGIS. Possui guia Principal, menus suspensos, barra de acesso rápido, busca por **Alt+Q** e alternância para a interface clássica.
+## Recursos
 
-### Resolução de tela
+- Interface de guias com seção **Principal** dedicada ao fluxo de trabalho SIG.
+- Menus suspensos que preservam as ações nativas do QGIS.
+- Integração de complementos instalados e atualização dos menus.
+- Barra de acesso rápido e busca centralizada de comandos pelo atalho **Alt+Q**.
+- Adaptação das interfaces do Editor de Layout e do Georreferenciador.
+- Português brasileiro e inglês, conforme o idioma da interface do QGIS.
+- Retorno à interface clássica e recuperação de barras e painéis.
 
-Para uma melhor experiência de uso, **recomenda-se resolução mínima de 1920 × 1080 pixels (Full HD / 1080p)**. O plugin **funciona normalmente em resoluções inferiores**, mas pode exigir mais rolagem horizontal e oferecer menos espaço ao mapa. **A resolução de 800 × 600 pixels não é recomendada**, devido à área insuficiente para acomodar confortavelmente os controles. Trata-se de uma recomendação de ergonomia, não de um bloqueio técnico.
+## Compatibilidade verificada
 
-### Compatibilidade homologada
+| Sistema | QGIS | Resultado |
+|---|---|---|
+| Windows 10 | 4.0 | Homologado |
+| Windows 11 26H2 | 4.2.2 | Homologado |
+| Ubuntu Linux 26.04 (Flatpak) | 4.2.3 | Homologado |
 
-- Windows 10 — QGIS 4.0
-- Windows 11 26H2 — QGIS 4.2.2
-- Ubuntu Linux 26.04 (Flatpak) — QGIS 4.2.3
+Essas validações foram comunicadas pelo responsável pelos testes; não constituem garantia de compatibilidade com todas as configurações do QGIS.
 
-Esses resultados referem-se às configurações testadas e não garantem compatibilidade com todas as instalações.
+## Instalação
 
-### Instalação
+1. Abra **Complementos → Gerenciar e Instalar Complementos** no QGIS 4.x.
+2. Escolha **Instalar a partir de ZIP** e selecione o arquivo distribuído.
+3. Ative o QRibbonSkin. A opção de retorno à interface clássica fica na guia **Interface**; o complemento também pode ser desativado pelo gerenciador de complementos.
 
-No QGIS 4.x, abra **Complementos → Gerenciar e Instalar Complementos → Instalar a partir de ZIP** e selecione o arquivo de distribuição. Habilite o plugin pelo gerenciador de complementos.
+## Utilização
 
-### Licença e créditos
+Use a guia **Principal** para adicionar camadas, navegar, selecionar feições, medir, identificar, acessar a tabela de atributos, processar dados e criar layouts. As outras guias apresentam as ferramentas do QGIS e de complementos instalados. A opção **Interface → Atualizar Menus** permite atualizar a listagem quando extensões forem instaladas ou removidas.
 
-Consulte os arquivos `LICENSE` e `ATTRIBUTION.md` no pacote de distribuição. O QRibbonSkin contém trabalho derivado/inspirado no ArcSkin, com as atribuições pertinentes preservadas; sua referência visual ao RustGIS não implica uso de código do RustGIS.
+## Licença e créditos
 
----
+Consulte `LICENSE` e `ATTRIBUTION.md`. A implementação contém trabalho derivado/inspirado no ArcSkin, com as atribuições preservadas. O estilo de interface foi influenciado visualmente pelo RustGIS, sem incorporar seu código.
 
-## English
+## Código-fonte, suporte e publicação
 
-**QRibbonSkin** is a QGIS 4.x plugin offering a reversible Ribbon-style interface that organizes native QGIS tools and installed plugin commands while preserving their original functionality. It features a Main tab, dropdown menus, quick-access actions, **Alt+Q** search, and an option to return to the classic QGIS interface.
-
-### Screen resolution
-
-For the best user experience, a **minimum resolution of 1920 × 1080 pixels (Full HD / 1080p) is recommended**. The plugin **also works at lower resolutions**, although more horizontal scrolling may be required and less room will be available for the map canvas. **800 × 600 pixels is not recommended**, due to limited space for interface controls. This is a usability recommendation, not a technical installation restriction.
-
-### Tested compatibility
-
-- Windows 10 — QGIS 4.0
-- Windows 11 26H2 — QGIS 4.2.2
-- Ubuntu Linux 26.04 (Flatpak) — QGIS 4.2.3
-
-These acceptance tests cover the listed configurations only.
-
-### Installation
-
-In QGIS 4.x, go to **Plugins → Manage and Install Plugins → Install from ZIP**, choose the distribution archive, and enable QRibbonSkin.
-
-### License and acknowledgments
-
-See `LICENSE` and `ATTRIBUTION.md` in the plugin distribution. QRibbonSkin includes work derived from/inspired by ArcSkin with appropriate attributions; visual inspiration from RustGIS does not imply use of RustGIS source code.
+Para publicação no repositório oficial de plugins do QGIS, será necessário vincular uma página pública do projeto, um repositório de código-fonte e um rastreador de problemas. Esses endereços não foram definidos neste pacote; não são inventados nos metadados.
