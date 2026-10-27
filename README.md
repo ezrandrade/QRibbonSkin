@@ -108,6 +108,48 @@ Esses módulos trabalham sobre as ações e janelas existentes no QGIS. Sua fina
 Os registros de homologação acima constam da documentação do próprio projeto e correspondem aos ambientes relatados pelo responsável pelos testes. **Não representam garantia de funcionamento em todas as distribuições, versões ou configurações.**
 
 O arquivo [metadata.txt](metadata.txt) declara **QGIS 4.0** como versão mínima e **4.99** como versão máxima da família suportada.
+Galeria de capturas de tela
+As imagens desta seção foram obtidas em uma instalação real do QGIS com o QRibbonSkin ativo. A disponibilidade de comandos varia conforme os complementos instalados, a versão do QGIS e o contexto de trabalho. Ferramentas de terceiros exibidas na Ribbon não integram a distribuição do QRibbonSkin.
+Visão geral
+
+A faixa de ferramentas Ribbon, os painéis nativos e a tela inicial do QGIS.
+Projeto
+
+Página de gerenciamento do projeto, comandos de arquivo e informações do projeto atual.
+Principal
+
+Navegação, acesso a camadas, seleção, medições, identificação de feições e ferramentas.
+Editar
+
+Ferramentas nativas de edição, área de transferência, feições, atributos e geometrias.
+Exibir
+
+Controles de visualização, painéis, camadas e vistas de mapa.
+Camada
+
+Gerenciamento, agrupamento, salvamento e edição de camadas.
+Configurações
+
+Perfis, estilos, projeções, atalhos e opções de configuração.
+Vetor
+
+Ferramentas vetoriais e acesso a ações de complementos instalados.
+Vetor com mapa
+
+Exemplo da guia Vetor com dados exibidos na área de mapa.
+Raster
+
+Ferramentas raster e ações de plugins instalados, aplicadas à visualização de um mosaico.
+Ajuda
+
+Comandos de documentação, ajuda e informações do QGIS.
+Interface
+
+Restauração da interface, painéis, personalização, menus e modo compacto.
+Observações sobre as imagens
+·	As capturas registram um ambiente de uso específico; os plugins mostrados nas guias continuam independentes do QRibbonSkin.
+·	Os recursos descritos são os que aparecem nas imagens e os que estão documentados no código do projeto.
+·	A organização dos menus pode variar com a versão do QGIS, o idioma e as extensões instaladas.
 
 ## Instalação
 
