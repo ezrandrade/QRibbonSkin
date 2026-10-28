@@ -1,4 +1,6 @@
-# QRibbonSkin 1.0.0
+# QRibbonSkin
+
+![Identidade visual do QRibbonSkin](docs/branding/qribbonskin-banner-github.svg)
 
 **Uma interface Ribbon para o QGIS 4.x, organizada a partir das ferramentas nativas do próprio QGIS.**
 
