@@ -865,15 +865,17 @@ class GeoreferencerRibbon(QWidget):
                         if id(action) not in seen:
                             actions.append(action)
                             seen.add(id(action))
-                    local_titles = lambda action: (
-                        tr(georeferencer_display_caption('Pontos de Controle', _caption(action)))
-                        if georeferencer_display_caption('Pontos de Controle', _caption(action))
-                        else None)
+                    def local_titles(action):
+                        return (
+                            tr(georeferencer_display_caption('Pontos de Controle', _caption(action)))
+                            if georeferencer_display_caption('Pontos de Controle', _caption(action))
+                            else None)
                 elif tab == 'Pontos de controle' and group == 'Aderência':
-                    local_titles = lambda action: (
-                        tr(georeferencer_display_caption('Aderência', _caption(action)))
-                        if georeferencer_display_caption('Aderência', _caption(action))
-                        else None)
+                    def local_titles(action):
+                        return (
+                            tr(georeferencer_display_caption('Aderência', _caption(action)))
+                            if georeferencer_display_caption('Aderência', _caption(action))
+                            else None)
                 leader_action = None
                 if tab == 'Pontos de controle' and display_group == 'Pontos de Controle':
                     preferred = preferred_action_index('Pontos de Controle',
