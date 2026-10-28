@@ -7,7 +7,7 @@ reparent or replace the QGIS canvas, status bar, dock widgets or map layers.
 from pathlib import Path
 
 from .i18n import tr
-from qgis.core import QgsProject
+from qgis.core import QgsApplication, QgsProject
 from qgis.PyQt.QtCore import Qt, QEvent, QSize
 from qgis.PyQt.QtGui import QAction, QIcon
 from qgis.PyQt.QtWidgets import (
@@ -109,6 +109,9 @@ class ProjectDashboard(QFrame):
             QToolButton#QRibbonSkinProjectCard:hover {
                 border-color: palette(highlight); background: palette(window);
             }
+            QLabel#QRibbonSkinProjectCardCaption {
+                color: palette(text); background: transparent; border: 0;
+            }
         ''')
         self._on_close = None
         self._disposed = False
@@ -160,6 +163,36 @@ class ProjectDashboard(QFrame):
                 lookup['recent'] = action
                 break
         return lookup
+
+    def _configure_project_card(self, button, caption, icon):
+        """Center the icon and its caption as a compact, clickable unit.
+
+        The QToolButton paints only the card background/menu indicator.
+        QLabel children draw the icon and caption exactly once. Connecting
+        clicks to the original QAction avoids the native QToolButton painting
+        another icon and caption behind the QLabel children.
+        """
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        button.setIcon(QIcon())  # Content is painted by the centered labels.
+        button.setText('')  # Never draw QToolButton text beneath the labels.
+        button.setAccessibleName(tr(caption))
+        layout = QVBoxLayout(button)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(5)
+        icon_label = QLabel(button)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setFixedSize(44, 44)
+        icon_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        icon_label.setPixmap(icon.pixmap(QSize(42, 42)))
+        caption_label = QLabel(tr(caption), button)
+        caption_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        caption_label.setWordWrap(True)
+        caption_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        caption_label.setObjectName('QRibbonSkinProjectCardCaption')
+        layout.addStretch(1)
+        layout.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(caption_label)
+        layout.addStretch(1)
 
     def _make_ui(self):
         outer = QHBoxLayout(self)
@@ -232,9 +265,6 @@ class ProjectDashboard(QFrame):
             action = self._action_lookup.get(key)
             button = QToolButton(panel)
             button.setObjectName('QRibbonSkinProjectCard')
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-            button.setIconSize(QSize(42, 42))
-            button.setText(tr(caption))
             button.setToolTip(tr(caption))
             # Compact card, comparable to RustGIS: never stretch all three
             # cards across the width of a maximized QGIS window.
@@ -243,7 +273,6 @@ class ProjectDashboard(QFrame):
             if key in ('new', 'open') and action is not None:
                 button.clicked.connect(self._close)
             if key == 'recent' and action is not None and action.menu() is not None:
-                button.setIcon(action.icon())
                 button.setMenu(action.menu())
                 button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
                 # QGIS owns the native recent-project menu. Never attach an
@@ -252,11 +281,37 @@ class ProjectDashboard(QFrame):
                 menu.triggered.connect(self._recent_project_triggered)
                 self._recent_menu_signal = menu
             elif action is not None:
-                button.setDefaultAction(action)
-                button.setText(tr(caption))
+                # A defaultAction silently repopulates QToolButton's own text
+                # and icon. The duplicated painting was overlapping our labels.
+                # Trigger the native QAction directly instead of assigning it
+                # as the button's defaultAction.
+                button.clicked.connect(action.trigger)
+                button.setEnabled(action.isEnabled())
             else:
                 button.setEnabled(False)
                 button.setToolTip(tr('Comando não disponível nesta instalação do QGIS'))
+            # Use QGIS-native icons, including Recent Projects. The QGIS
+            # theme's history icon respects the host platform/theme and avoids
+            # the unrelated custom folder-and-clock icon used in 1.1.12.
+            native_icon = action.icon() if action is not None else QIcon()
+            if key == 'recent':
+                card_icon = QgsApplication.getThemeIcon('/mIconHistory.svg')
+                if card_icon.isNull():
+                    card_icon = QIcon(':/images/themes/default/mIconHistory.svg')
+                if card_icon.isNull():
+                    card_icon = QgsApplication.getThemeIcon('/mActionHistory.svg')
+                if card_icon.isNull():
+                    open_action = self._action_lookup.get('open')
+                    card_icon = open_action.icon() if open_action is not None else QIcon()
+            elif not native_icon.isNull():
+                card_icon = native_icon
+            else:
+                card_icons = {'new': 'new_project.svg',
+                              'open': 'open_project.svg'}
+                icon_path = (Path(__file__).resolve().parent / 'resources' /
+                             'icons' / card_icons[key])
+                card_icon = QIcon(str(icon_path))
+            self._configure_project_card(button, caption, card_icon)
             cards.addWidget(button)
         cards.addStretch(1)  # Align the compact cards to the left.
         body.addLayout(cards)

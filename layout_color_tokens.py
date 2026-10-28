@@ -21,34 +21,53 @@ def _render(qss):
 
 
 RIBBON_LIGHT_QSS = _render("""
-QWidget#QRibbonLayoutWidget { background: @canvas@; color: @text@; }
-QTabWidget#QRibbonLayoutTabs::pane { background: @canvas@; border: 0; }
+QWidget#QRibbonLayoutWidget {
+    background-color: @canvas@; color: @text@;
+    font-family: 'Segoe UI', 'Noto Sans', sans-serif;
+}
+QTabWidget#QRibbonLayoutTabs { border: 0; margin: 0; padding: 0;
+    background-color: @canvas@; }
+QTabWidget#QRibbonLayoutTabs::pane { background-color: @canvas@;
+    border: 0; margin: 0; padding: 0; }
+QTabWidget#QRibbonLayoutTabs QTabBar { border: 0; margin: 0; padding: 0;
+    background-color: @canvas@; }
 QTabWidget#QRibbonLayoutTabs QTabBar::tab {
     color: @text@; background: transparent; border: 0;
-    border-bottom: 2px solid transparent; padding: 5px 13px;
+    border-bottom: 2px solid transparent; padding: 5px 12px; margin: 0 1px;
 }
 QTabWidget#QRibbonLayoutTabs QTabBar::tab:selected {
     color: @accent@; background: @accent_surface@;
     border-bottom: 2px solid @accent@;
 }
-QTabWidget#QRibbonLayoutTabs QTabBar::tab:hover {background: @hover@;}
+QTabWidget#QRibbonLayoutTabs QTabBar::tab:hover { background: @hover@; }
+QWidget#QRibbonLayoutPage { background: @canvas@; border: 0; }
+QScrollArea#QRibbonLayoutScroll { background: @canvas@; border: 0; }
+QWidget#QRibbonLayoutScrollViewport, QWidget#QRibbonLayoutScrollContent {
+    background: @canvas@; border: 0;
+}
 QFrame#QRibbonLayoutGroup {border: 0; background: transparent;}
 QFrame#QRibbonLayoutDivider {border: 0; background: @divider@;}
-QLabel#QRibbonLayoutGroupName {color: @muted@; font-size: 8pt;}
-QToolButton {
-    color: @text@; background: transparent; border: 1px solid transparent;
-    border-radius: 4px; padding: 2px;
+QLabel#QRibbonLayoutGroupName {color: @muted@; font-size: 8pt; border: 0;}
+QToolButton#QRibbonSkinTool {
+    color: @text@; background: transparent; border: 0;
+    border-radius: 4px; margin: 0; padding: 0;
 }
-QToolButton:hover {background: @hover@;}
-QToolButton:checked {background: @accent_surface@; border-color: @border@;}
-QToolButton:pressed {background: @pressed@;}
-QToolButton:disabled {color: @muted@;}
-QToolButton#QRibbonLayoutPrimary {padding: 2px;}
+QToolButton#QRibbonSkinTool:hover {background: @hover@;}
+QToolButton#QRibbonSkinTool:pressed {background: @pressed@;}
+QToolButton#QRibbonSkinTool:checked {background: @accent_surface@;}
+QToolButton#QRibbonSkinTool:disabled {color: @muted@;}
+QFrame#QRibbonLayoutSearchCorner {background: transparent; border: 0;}
+QLineEdit#QRibbonLayoutSearch {
+    background: @field@; color: @text@; border: 1px solid @border@;
+    border-radius: 5px; padding: 1px 7px; font-size: 9pt;
+    selection-background-color: @accent@;
+}
+QLineEdit#QRibbonLayoutSearch:focus {border: 1px solid @accent@;}
 """)
 
 RIBBON_TOOLBAR_QSS = _render("""
 QToolBar#QRibbonSkinLayoutDesignerToolbar {
-    background: @canvas@; border: 0; border-bottom: 1px solid @divider@;
+    background: @canvas@; border: 0;
     spacing: 0; padding: 0;
 }
 """)

@@ -12,7 +12,7 @@ from pathlib import Path
 import json
 import unicodedata
 
-from qgis.core import QgsSettings
+from qgis.core import QgsSettings, QgsMessageLog, Qgis
 
 from qgis.PyQt.QtCore import Qt, QEvent, QObject, QTimer
 from qgis.PyQt.QtGui import QAction, QIcon, QKeySequence, QShortcut
@@ -23,6 +23,7 @@ from .ribbon import RibbonWidget
 from .panel_style import PanelLightTheme
 from .layout_designer import LayoutDesignerManager
 from .georeferencer import GeoreferencerManager
+from .model_designer import ModelDesignerManager
 
 
 ROOT = Path(__file__).resolve().parent
@@ -79,6 +80,9 @@ class QRibbonSkinPlugin(QObject):
         self._restore_epoch = 0
         self._ribbon_bar = None
         self._toolbar_visibility = []
+        self._toolbar_monitor = QTimer(self)
+        self._toolbar_monitor.setInterval(1200)
+        self._toolbar_monitor.timeout.connect(self._sync_native_toolbars)
         self._dock_visibility = []
         self._focus_map = False
         self._is_active = False
@@ -91,10 +95,11 @@ class QRibbonSkinPlugin(QObject):
         self._panel_light_theme = PanelLightTheme(iface)
         self._layout_manager = LayoutDesignerManager(iface, self)
         self._georeferencer_manager = GeoreferencerManager(iface, self)
+        self._model_designer_manager = ModelDesignerManager(iface, self)
 
     def initGui(self):  # noqa: N802
         win = self.iface.mainWindow()
-        icon = QIcon(str(ROOT / "resources" / "qribbonskin.svg"))
+        icon = QIcon(str(ROOT / "resources" / "qribbonskin_toolbar.svg"))
         self._switch = QAction(icon, tr("Ativar interface QRibbonSkin"), win)
         self._switch.setCheckable(True)
         self._switch.setChecked(False)
@@ -182,10 +187,11 @@ class QRibbonSkinPlugin(QObject):
                 if self._is_active or self._ribbon_bar is not None:
                     try:
                         self._disable()
-                    except Exception:
-                        # Never prevent QGIS from handling its own close event.
-                        # The durable snapshot remains available at next boot.
-                        pass
+                    except Exception as exc:
+                        # Do not interrupt QGIS shutdown; report restoration errors.
+                        QgsMessageLog.logMessage(
+                            f"Falha ao desativar a Ribbon no fechamento: {exc}",
+                            "QRibbonSkin", Qgis.MessageLevel.Warning)
                     finally:
                         self._is_active = False
                         self._set_switch_without_signal(False)
@@ -248,8 +254,10 @@ class QRibbonSkinPlugin(QObject):
             if self._is_active or self._ribbon_bar is not None:
                 try:
                     self._disable(clear_recovery=False)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    QgsMessageLog.logMessage(
+                        f"Falha ao desativar a Ribbon ao sair: {exc}",
+                        "QRibbonSkin", Qgis.MessageLevel.Warning)
                 finally:
                     self._is_active = False
                     self._set_switch_without_signal(False)
@@ -278,6 +286,35 @@ class QRibbonSkinPlugin(QObject):
         return [bar for bar in win.findChildren(QToolBar)
                 if bar.parent() is win
                 and bar.objectName() != "QRibbonSkinToolbar"]
+
+    def _sync_native_toolbars(self):
+        """Track QGIS/plugin toolbars created after Ribbon activation.
+
+        Preserve their visibility at discovery, so switching back to classic
+        restores these toolbars too. Never fabricate or trigger QAction objects.
+        Existing bars are not touched: this prevents fighting explicit user
+        changes and avoids modifying third-party toolbar state repeatedly.
+        """
+        if (not self._is_active or self._ribbon_bar is None
+                or self._closing or self._unloaded):
+            return
+        known = {id(bar) for bar, _ in self._toolbar_visibility}
+        discovered = []
+        for bar in self._native_toolbars():
+            if id(bar) in known:
+                continue
+            try:
+                visible = bool(bar.isVisible())
+                discovered.append((bar, visible))
+                # Ribbon occupies the toolbar area. Restore the original
+                # visibility at the next switch back to classic QGIS.
+                bar.hide()
+            except RuntimeError:
+                continue
+        if discovered:
+            self._toolbar_visibility.extend(discovered)
+            self._remember_known_good_toolbars(self._toolbar_visibility)
+            self._capture_recovery_snapshot()
 
     def _remember_known_good_toolbars(self, states):
         """Save last visible native toolbars independently from crash recovery.
@@ -471,8 +508,10 @@ class QRibbonSkinPlugin(QObject):
             # original failure so that QGIS reports what went wrong.
             try:
                 self._disable()
-            except Exception:
-                pass
+            except Exception as recovery_exc:
+                QgsMessageLog.logMessage(
+                    f"Falha ao restaurar interface após erro de ativação: {recovery_exc}",
+                    "QRibbonSkin", Qgis.MessageLevel.Warning)
             finally:
                 self._is_active = False
                 if not self._closing:
@@ -566,6 +605,7 @@ class QRibbonSkinPlugin(QObject):
         # Only after the complete Ribbon (including Interface -> classic QGIS)
         # exists may the native menu bar be hidden.
         self._native_menu_bar.hide()
+        self._toolbar_monitor.start()
         # Changing styles can make QGIS re-show a dock (notably Browser).
         # Keep precisely the user's panel visibility snapshot from activation.
         self._preserve_initial_docks()
@@ -583,6 +623,12 @@ class QRibbonSkinPlugin(QObject):
             self._georeferencer_manager.start()
         except (AttributeError, RuntimeError, TypeError):
             self._georeferencer_manager.stop()
+        # The QGIS Processing Model Designer is also a native QMainWindow.
+        # Its optional Ribbon reuses QGIS-owned actions and stays reversible.
+        try:
+            self._model_designer_manager.start()
+        except (AttributeError, RuntimeError, TypeError):
+            self._model_designer_manager.stop()
         # Workspace tabs remain deferred to QRibbonSkin 2.0. All editors
         # keep their own QGIS-owned windows and native processing functions.
 
@@ -679,9 +725,17 @@ class QRibbonSkinPlugin(QObject):
         so a toolbar destroyed by another plugin does not block the others.
         """
         win = self.iface.mainWindow()
+        # Capture bars added since the last monitor tick before restoring UI.
+        self._sync_native_toolbars()
+        self._toolbar_monitor.stop()
         # Restore every auxiliary native editor before the main QGIS toolbar.
         try:
             self._georeferencer_manager.stop()
+        except (RuntimeError, TypeError, AttributeError):
+            pass
+        # Restore native Model Designer toolbars before QGIS saves window state.
+        try:
+            self._model_designer_manager.stop()
         except (RuntimeError, TypeError, AttributeError):
             pass
         # Restore each Layout Designer first, including if it is still open.
@@ -769,6 +823,7 @@ class QRibbonSkinPlugin(QObject):
                 self._layout_manager.stop()
             except (RuntimeError, TypeError, AttributeError):
                 pass
+            self._toolbar_monitor.stop()
             self._unloaded = True
             try:
                 self._window.removeEventFilter(self)

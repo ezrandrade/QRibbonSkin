@@ -12,18 +12,21 @@ No QMainWindow.saveState/restoreState calls, QGIS settings or layout data writes
 """
 
 from qgis.PyQt.QtCore import QObject, Qt, QEvent, QTimer, QSize
-from qgis.PyQt.QtGui import QAction, QIcon, QFontMetrics
+from qgis.PyQt.QtGui import QAction, QIcon, QFontMetrics, QKeySequence, QShortcut
 from qgis.PyQt.QtWidgets import (
     QDockWidget, QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu, QMenuBar, QStatusBar, QTabBar, QScrollArea, QSizePolicy,
     QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget, QWidgetAction,
+    QDialog, QLineEdit, QListWidget, QListWidgetItem, QStyle,
 )
 
-from .i18n import tr
+from .i18n import tr, ui_label
 from .layout_designer_model import (
     TAB_NAMES, SOURCE_TABS, is_output_action, title_for_source,
-    tab_for_native_toolbar, layout_action_placement, LAYOUT_GROUP_ORDER,
+    tab_for_native_toolbar, layout_action_placement, LAYOUT_GROUP_ORDER, normalized,
 )
 from .icon_mapping import display_icon
+from .ribbon import RibbonActionButton
+from .theme import light_palette
 from .layout_color_tokens import (
     DOCK_LIGHT_QSS, TOOLBAR_LIGHT_QSS,
     MENU_LIGHT_QSS, TAB_LIGHT_QSS, STATUS_LIGHT_QSS, RULER_LIGHT_QSS,
@@ -63,117 +66,165 @@ def _action_label(action):
     return ""
 
 
-def _caption_lines(caption, limit=21, max_lines=3):
-    """Word-wrap Ribbon captions without changing QAction.text().
+def _layout_action_by_labels(actions, labels, object_names=()):
+    """Locate the *native* QAction by task, not by its position in a toolbar.
 
-    Long captions are never manually shortened with an ellipsis. The actual
-    display width is measured by QFontMetrics when creating the Qt button.
+    Native QGIS captions vary across locales. Search exact captions first,
+    then more descriptive captions/tooltips and lastly QObject identifiers.
+    This does not alter QAction text, ownership or shortcuts.
     """
-    words = str(caption).replace("&", "").strip().split()
-    if not words:
-        return ""
-    rows = [""]
-    for word in words:
-        if rows[-1] and len(rows[-1]) + len(word) + 1 > limit and len(rows) < max_lines:
-            rows.append(word)
-        else:
-            rows[-1] = (rows[-1] + " " + word).strip()
-    return "\n".join(rows)
+    terms = tuple(normalized(label) for label in labels)
+    for term in terms:
+        for action in actions:
+            if normalized(str(action.text() or '')) == term:
+                return action
+    for term in terms:
+        for action in actions:
+            for value in (action.text(), action.toolTip()):
+                if term in normalized(str(value or '')):
+                    return action
+    identifiers = tuple(name.casefold() for name in object_names)
+    for identifier in identifiers:
+        for action in actions:
+            if identifier in str(action.objectName() or '').casefold():
+                return action
+    return None
 
 
-def _new_button(action, parent, prominent=False):
-    """Create an independent presentation for the *original* QGIS QAction."""
-    btn = QToolButton(parent)
-    btn.setAutoRaise(True)
-    btn.setDefaultAction(action)
-    caption = _action_label(action)
-    btn.setToolTip(action.toolTip() or caption)
-    btn.setIcon(display_icon(action.icon(), caption))
-    menu = action.menu()
-    if menu:
-        btn.setMenu(menu)
-        btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-    metrics = QFontMetrics(btn.font())
-    if prominent:
-        btn.setObjectName("QRibbonLayoutPrimary")
-        btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-        btn.setIconSize(QSize(27, 27))
-        wrapped = _caption_lines(caption, 18, 3)
-        lines = wrapped.split("\n")
-        width = max(metrics.horizontalAdvance(line) for line in lines) + 24
-        # Shorter lead tiles: vertical rhythm now matches the compact
-        # command columns and frees space beneath the Ribbon.
-        btn.setFixedSize(min(190, max(102, width)), 90)
-    else:
-        btn.setObjectName("QRibbonLayoutSecondary")
-        btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        btn.setIconSize(QSize(17, 17))
-        # Two display lines are allowed for labels that would become overly
-        # wide in a single line, never clipping text to a fixed 104 px.
-        single_line_width = metrics.horizontalAdvance(caption) + 38
-        wrapped = (_caption_lines(caption, 22, 2)
-                   if single_line_width > 240 else caption)
-        lines = wrapped.split("\n")
-        width = max(metrics.horizontalAdvance(line) for line in lines) + 44
-        # Single-line rows stay compact. Allow the exact font-metric height
-        # required by two-line captions so no tool label is cut off.
-        btn.setFixedHeight(29 if len(lines) == 1 else
-                           max(31, 2 * metrics.lineSpacing() + 3))
-        btn.setFixedWidth(min(320, max(108, width)))
-    btn.setText(wrapped)
-    return btn
+def _principal_preferred_action(section, actions):
+    """Choose a native action for the principal button of each section."""
+    # Select/Move Item is different from Move Content or Select All.
+    # Zoom Full (Ver Tudo) is different from Pan Layout or Zoom to Page.
+    preferred = {
+        'Editar itens': (
+            ('selecionar/mover item', 'selecionar mover item',
+             'select/move item', 'select move item'),
+            ('mActionSelectMoveItem', 'mActionSelectMove'),
+        ),
+        'Navegação': (
+            ('ver tudo', 'zoom total', 'zoom full', 'zoom to full extent',
+             'zoom para toda a pagina'),
+            ('mActionZoomFull', 'mActionZoomToFullExtent'),
+        ),
+    }
+    if section in preferred:
+        labels, names = preferred[section]
+        found = _layout_action_by_labels(actions, labels, names)
+        if found is not None:
+            return found
+        # Do not silently choose 'Select All' or 'Pan Layout' when a
+        # version-specific QGIS translation cannot be matched.
+        return None
+    priorities = {
+        'Arquivo': ('salvar layout', 'save layout', 'salvar', 'save', 'abrir', 'open'),
+        'Inserir elementos': ('adicionar mapa', 'add map', 'adicionar item', 'add item'),
+        'Organizar itens': ('agrupar', 'group', 'alinhar', 'align'),
+        'Atlas': ('visualizar atlas', 'preview atlas', 'atlas preview',
+                  'habilitar atlas', 'enable atlas'),
+        'Exportar': ('exportar como pdf', 'export as pdf', 'export pdf',
+                     'imprimir layout', 'print layout'),
+    }
+    keywords = priorities.get(section, ())
+    names = [normalized(_action_label(action)) for action in actions]
+    for term in keywords:
+        for index, name in enumerate(names):
+            if name == term:
+                return actions[index]
+    for term in keywords:
+        for index, name in enumerate(names):
+            if term in name:
+                return actions[index]
+    return actions[0] if actions else None
+
+
+def _principal_first_dropdown_action(section, actions):
+    """Return the first *secondary* action requested by the UI layout."""
+    if section == 'Editar itens':
+        return _layout_action_by_labels(
+            actions,
+            ('mover conteudo', 'mover o conteudo', 'move content',
+             'move item content'),
+            ('mActionMoveItemContent', 'mActionMoveContent'),
+        )
+    if section == 'Navegação':
+        return _layout_action_by_labels(
+            actions,
+            ('deslocar layout', 'mover layout', 'movimentar layout',
+             'pan layout', 'move layout'),
+            ('mActionPan', 'mActionPanLayout'),
+        )
+    return None
 
 
 class _LayoutGroup(QFrame):
-    """Semantic group of native commands; coherent sizes for any count."""
+    """Compact 124px style: one leading native action and optional dropdown."""
 
-    def __init__(self, title, parent):
+    def __init__(self, title, parent, leader=None):
         super().__init__(parent)
-        self.setObjectName("QRibbonLayoutGroup")
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(7, 3, 7, 3)
-        outer.setSpacing(1)
-        self.columns = QHBoxLayout()
-        self.columns.setContentsMargins(0, 0, 0, 0)
-        self.columns.setSpacing(4)
-        outer.addLayout(self.columns, 1)
-        label = QLabel(tr(title), self)
-        label.setObjectName("QRibbonLayoutGroupName")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        outer.addWidget(label)
-        self.count = 0
+        self.setObjectName('QRibbonLayoutGroup')
         self._actions = []
+        self._leader = leader
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 3, 10, 1)
+        outer.setSpacing(1)
+        self.commands = QHBoxLayout()
+        self.commands.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.commands.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(self.commands, 1)
+        name = QLabel(ui_label(title), self)
+        name.setObjectName('QRibbonLayoutGroupName')
+        name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name.setFixedHeight(19)
+        name.setToolTip(ui_label(title))
+        outer.addWidget(name)
+        self.setMinimumWidth(max(92, name.fontMetrics().horizontalAdvance(ui_label(title)) + 20))
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
 
     def add_action(self, action):
-        self._actions.append(action)
+        if action is not None and _qobject_alive(action) and action not in self._actions:
+            self._actions.append(action)
 
     def finalize(self):
-        """Create all buttons only after knowing group size.
-
-        Singleton groups use a small button. A primary visual command is only
-        justified for a sufficiently populated group with a concise caption.
-        Remaining commands form compact 3-row columns instead of large tiles.
-        """
-        actions = self._actions
-        prominent = (len(actions) >= 4 and len(_action_label(actions[0])) <= 24
-                     and not actions[0].icon().isNull())
-        offset = 0
-        if prominent:
-            self.columns.addWidget(_new_button(actions[0], self, prominent=True))
-            offset = 1
-        for start in range(offset, len(actions), 3):
-            col = QVBoxLayout()
-            col.setContentsMargins(0, 1, 0, 1)
-            col.setSpacing(1)
-            col.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-            self.columns.addLayout(col)
-            buttons = [_new_button(action, self) for action in actions[start:start+3]]
-            width = max(button.width() for button in buttons)
-            for button in buttons:
-                button.setFixedWidth(width)
-                col.addWidget(button)
-        self.count = len(actions)
-
+        actions = [a for a in self._actions if _qobject_alive(a)
+                   and not isinstance(a, QWidgetAction) and not a.isSeparator()]
+        if not actions:
+            return
+        lead = self._leader if self._leader in actions else actions[0]
+        button = RibbonActionButton(self)
+        button.setDefaultAction(lead)
+        button.setFixedHeight(72)
+        button.setIconSize(QSize(25, 25))
+        button.setMinimumWidth(84)
+        other = [a for a in actions if a is not lead]
+        if other:
+            # Build at popup-time; QGIS updates enabled/checked dynamically.
+            menu = QMenu(self)
+            def populate():
+                menu.clear()
+                # A leading QAction can itself own a native QMenu. Keep it
+                # reachable even when the group's other actions need a menu.
+                native_lead_menu = lead.menu()
+                if _qobject_alive(native_lead_menu):
+                    menu.addAction(native_lead_menu.menuAction())
+                    menu.addSeparator()
+                for action in other:
+                    if not _qobject_alive(action) or not action.isVisible():
+                        continue
+                    child = action.menu()
+                    if _qobject_alive(child):
+                        menu.addAction(child.menuAction())
+                    else:
+                        menu.addAction(action)
+                if not menu.actions():
+                    placeholder = menu.addAction(tr('Nenhuma ferramenta disponível'))
+                    placeholder.setEnabled(False)
+            menu.aboutToShow.connect(populate)
+            button.setMenu(menu)
+            button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        elif _qobject_alive(lead.menu()):
+            button.setMenu(lead.menu())
+            button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.commands.addWidget(button)
 
 
 
@@ -258,6 +309,104 @@ class LayoutChrome:
         self.saved.clear()
 
 
+class LayoutSpotlight(QDialog):
+    """Centered Alt+Q command search for one Layout Designer window."""
+
+    def __init__(self, ribbon):
+        super().__init__(ribbon.native_window,
+                         Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self._ribbon = ribbon
+        self._matches = []
+        self.setObjectName('QRibbonLayoutSpotlight')
+        self.setModal(False)
+        self.setMinimumWidth(320)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 12)
+        layout.setSpacing(8)
+        title = QLabel(tr('Buscar ferramentas'), self)
+        font = title.font()
+        font.setPointSize(11)
+        font.setBold(True)
+        title.setFont(font)
+        layout.addWidget(title)
+        self.query = QLineEdit(self)
+        self.query.setPlaceholderText(tr('Digite para buscar ferramentas'))
+        self.query.setClearButtonEnabled(True)
+        self.query.setMinimumHeight(36)
+        self.query.textChanged.connect(self._populate)
+        self.query.returnPressed.connect(self._activate_selected)
+        self.query.installEventFilter(self)
+        layout.addWidget(self.query)
+        self.results = QListWidget(self)
+        self.results.setIconSize(QSize(20, 20))
+        self.results.setMinimumHeight(200)
+        self.results.itemActivated.connect(self._activate_item)
+        self.results.itemClicked.connect(self._activate_item)
+        layout.addWidget(self.results)
+        layout.addWidget(QLabel(tr('Enter: executar  ·  Esc: fechar'), self))
+        colors = light_palette()
+        self.setStyleSheet('QDialog#QRibbonLayoutSpotlight {'
+                           'background: %s; color: %s; border: 1px solid %s; '
+                           'border-radius: 10px; }'
+                           % (colors['field'], colors['text'], colors['border']))
+
+    def eventFilter(self, watched, event):  # noqa: N802
+        if watched is self.query and event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Escape:
+                self.close()
+                return True
+            if event.key() in (Qt.Key.Key_Down, Qt.Key.Key_Up):
+                delta = 1 if event.key() == Qt.Key.Key_Down else -1
+                row = max(0, min(self.results.count() - 1, self.results.currentRow() + delta))
+                self.results.setCurrentRow(row)
+                return True
+        return super().eventFilter(watched, event)
+
+    def keyPressEvent(self, event):  # noqa: N802
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
+    def open_centered(self, initial_text=''):
+        window = self._ribbon.native_window
+        self.resize(max(280, min(660, window.width() - 48)), 340)
+        center = window.mapToGlobal(window.rect().center())
+        self.move(center.x() - self.width() // 2, center.y() - self.height() // 2)
+        self.query.setText(initial_text)
+        self._populate(initial_text)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.query.setFocus()
+        self.query.selectAll()
+
+    def _populate(self, text):
+        self.results.clear()
+        self._matches = self._ribbon.search_actions(text)
+        for name, action in self._matches:
+            item = QListWidgetItem(action.icon(), name, self.results)
+            item.setToolTip(action.toolTip() or name)
+        if self.results.count():
+            self.results.setCurrentRow(0)
+        else:
+            item = QListWidgetItem(tr('Nenhum comando encontrado'), self.results)
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+
+    def _activate_selected(self):
+        self._activate_item(self.results.currentItem())
+
+    def _activate_item(self, item):
+        if item is None:
+            return
+        index = self.results.row(item)
+        if 0 <= index < len(self._matches):
+            action = self._matches[index][1]
+            self.close()
+            if _qobject_alive(action) and action.isEnabled() and action.isVisible():
+                action.trigger()
+
+
 class LayoutRibbon(QWidget):
     """A self-contained Ribbon, with no QGIS menu or toolbar ownership."""
 
@@ -269,15 +418,19 @@ class LayoutRibbon(QWidget):
         self.setObjectName("QRibbonLayoutWidget")
         self.setMinimumWidth(0)
         # Compact rows, including two-line labels, plus group captions.
-        self.setFixedHeight(158)
+        self.setFixedHeight(124)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setStyleSheet(RIBBON_LIGHT_QSS)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         tabs = QTabWidget(self)
         tabs.setObjectName("QRibbonLayoutTabs")
         tabs.setDocumentMode(True)
         tabs.setUsesScrollButtons(True)
+        tabs.tabBar().setExpanding(False)
+        tabs.tabBar().setDrawBase(False)
+        tabs.tabBar().setElideMode(Qt.TextElideMode.ElideNone)
         self.tabs = tabs
         layout.addWidget(tabs)
         self._tab_rows = {}
@@ -303,7 +456,9 @@ class LayoutRibbon(QWidget):
             scroll.setFrameShape(QFrame.Shape.NoFrame)
             scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            scroll.viewport().setObjectName("QRibbonLayoutScrollViewport")
             content = QWidget()
+            content.setObjectName("QRibbonLayoutScrollContent")
             row = QHBoxLayout(content)
             row.setContentsMargins(1, 0, 1, 0)
             row.setSpacing(0)
@@ -311,13 +466,13 @@ class LayoutRibbon(QWidget):
             scroll.setWidget(content)
             left.clicked.connect(lambda _=False, s=scroll: s.horizontalScrollBar().setValue(s.horizontalScrollBar().value()-220))
             right.clicked.connect(lambda _=False, s=scroll: s.horizontalScrollBar().setValue(s.horizontalScrollBar().value()+220))
-            def sync_arrows(*_unused, s=scroll, l=left, r=right):
+            def sync_arrows(*_unused, s=scroll, left_button=left, right_button=right):
                 sb = s.horizontalScrollBar()
                 overflow = sb.maximum() > sb.minimum()
-                l.setVisible(overflow)
-                r.setVisible(overflow)
-                l.setEnabled(overflow and sb.value() > sb.minimum())
-                r.setEnabled(overflow and sb.value() < sb.maximum())
+                left_button.setVisible(overflow)
+                right_button.setVisible(overflow)
+                left_button.setEnabled(overflow and sb.value() > sb.minimum())
+                right_button.setEnabled(overflow and sb.value() < sb.maximum())
             scroll.horizontalScrollBar().rangeChanged.connect(sync_arrows)
             scroll.horizontalScrollBar().valueChanged.connect(sync_arrows)
             frame.addWidget(left)
@@ -330,7 +485,90 @@ class LayoutRibbon(QWidget):
         self._build_native()
         self._build_native_toolbars_and_menus()
         self._build_controls(exclusive_callback)
+        self._build_native_menu_fallback()
+        self._make_search_corner()
+        self._spotlight = LayoutSpotlight(self)
+        self._search_shortcut = QShortcut(QKeySequence("Alt+Q"), self.native_window)
+        self._search_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self._search_shortcut.activated.connect(self.open_spotlight)
+        self._update_search_geometry()
         self.tabs.setCurrentIndex(0)
+
+    def _make_search_corner(self):
+        host = QFrame(self)
+        host.setObjectName('QRibbonLayoutSearchCorner')
+        frame = QHBoxLayout(host)
+        frame.setContentsMargins(5, 2, 5, 2)
+        frame.setSpacing(3)
+        self.search = QLineEdit(host)
+        self.search.setObjectName('QRibbonLayoutSearch')
+        self.search.setPlaceholderText(tr('Buscar ferramenta...  Alt+Q'))
+        self.search.setToolTip(tr('Abrir busca central (Alt+Q)'))
+        self.search.setFixedHeight(24)
+        self.search.setClearButtonEnabled(True)
+        self.search.returnPressed.connect(lambda: self.open_spotlight(self.search.text()))
+        from pathlib import Path
+        icon = QIcon(str(Path(__file__).resolve().parent / 'resources' / 'search.svg'))
+        search_action = self.search.addAction(icon, QLineEdit.ActionPosition.TrailingPosition)
+        search_action.triggered.connect(
+            lambda _checked=False: self.open_spotlight(self.search.text()))
+        frame.addWidget(self.search)
+        self.search_host = host
+        host.raise_()
+
+    def _update_search_geometry(self):
+        if not hasattr(self, 'search_host'):
+            return
+        width = self.width()
+        if width < 100:
+            return
+        search_width = 168 if width < 850 else (210 if width < 1240 else 260)
+        host_width = search_width + 12
+        self.search.setFixedWidth(search_width)
+        self.search_host.setGeometry(max(0, width - host_width - 5), 0, host_width, 30)
+        self.tabs.tabBar().setMaximumWidth(max(100, width - host_width - 14))
+        self.search_host.raise_()
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self._update_search_geometry()
+
+    def search_actions(self, text, limit=35):
+        query = normalized(text)
+        if len(query) < 2:
+            return []
+        matches, seen = [], set()
+        actions = [action for group in self._planned.values() for action in group]
+        actions.extend(self.native_window.findChildren(QAction))
+        for action in actions:
+            if (not _qobject_alive(action) or isinstance(action, QWidgetAction)
+                    or id(action) in seen or action.isSeparator()
+                    or not action.isEnabled() or not action.isVisible()
+                    or action.menu() is not None):
+                continue
+            seen.add(id(action))
+            title = _action_label(action)
+            if title and query in normalized(title + ' ' + str(action.toolTip() or '')):
+                matches.append((title, action))
+                if len(matches) >= limit:
+                    break
+        return matches
+
+    def open_spotlight(self, initial_text=''):
+        if _qobject_alive(getattr(self, '_spotlight', None)):
+            self._spotlight.open_centered(initial_text)
+
+    def dispose_search(self):
+        shortcut = getattr(self, '_search_shortcut', None)
+        if _qobject_alive(shortcut):
+            shortcut.setEnabled(False)
+            shortcut.deleteLater()
+        self._search_shortcut = None
+        dialog = getattr(self, '_spotlight', None)
+        if _qobject_alive(dialog):
+            dialog.close()
+            dialog.deleteLater()
+        self._spotlight = None
 
     def _get_source(self, source):
         getter = getattr(self.designer, source, None)
@@ -422,12 +660,47 @@ class LayoutRibbon(QWidget):
         if row.count():
             divider = QFrame(self)
             divider.setObjectName("QRibbonLayoutDivider")
-            divider.setFixedSize(1, 68)
+            divider.setFixedSize(1, 76)
             row.addWidget(divider, 0, Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(group)
 
+    def _build_principal_groups(self):
+        """Reuse existing native QActions in an ergonomic Main layout tab.
+
+        Contextual tabs keep their complete action lists. Never duplicate or
+        change QGIS QAction ownership, text, shortcuts or processing behavior.
+        """
+        sections = (
+            ('Arquivo', (('Layout', 'Arquivo'), ('Layout', 'Projeto de layout'))),
+            ('Inserir elementos', (('Inserir', 'Adicionar elementos'),
+                                  ('Inserir', 'Elementos'))),
+            ('Navegação', (('Exibir', 'Navegação'), ('Exibir', 'Visualização'))),
+            ('Editar itens', (('Editar', 'Ferramentas de edição'), ('Editar', 'Edição'))),
+            ('Organizar itens', (('Editar', 'Organizar itens'),)),
+            ('Atlas', (('Atlas', 'Atlas'), ('Atlas', 'Relatório'))),
+            ('Exportar', (('Exportar', 'Impressão e exportação'),)),
+        )
+        for title, keys in sections:
+            items, seen = [], set()
+            for key in keys:
+                for action in self._planned.get(key, ()):
+                    if id(action) not in seen:
+                        items.append(action)
+                        seen.add(id(action))
+            if items:
+                leader = _principal_preferred_action(title, items)
+                group = _LayoutGroup(title, self, leader=leader)
+                first = _principal_first_dropdown_action(title, items)
+                if first is not None and first is not leader:
+                    items = [first] + [action for action in items if action is not first]
+                for action in items:
+                    group.add_action(action)
+                group.finalize()
+                self._append_group('Principal', group)
+
     def _render_planned_groups(self):
         """Consistent group order independently of QGIS toolbar/menu order."""
+        self._build_principal_groups()
         for tab in TAB_NAMES:
             keys = [key for key in self._planned if key[0] == tab]
             preferred = LAYOUT_GROUP_ORDER.get(tab, ())
@@ -450,6 +723,31 @@ class LayoutRibbon(QWidget):
         group.add_action(action)
         group.finalize()
         self._append_group("Interface", group)
+
+
+    def _build_native_menu_fallback(self):
+        """Expose original Layout QMenus while its top menu bar is hidden.
+
+        Native actions and menus keep their original owners. This covers
+        QGIS-controlled submenus not independently discovered by the Ribbon.
+        """
+        bar = self.native_window.menuBar()
+        if not _qobject_alive(bar):
+            return
+        original = QMenu(tr('Menus originais'), self)
+        for action in bar.actions():
+            if _qobject_alive(action) and not action.isSeparator() and action.menu() is not None:
+                original.addAction(action)
+        if not original.actions():
+            return
+        launch = QAction(tr('Menus originais'), self)
+        launch.setToolTip(tr('Abrir os menus nativos sem exibir a barra superior'))
+        launch.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarMenuButton))
+        launch.setMenu(original)
+        group = _LayoutGroup('Menus do QGIS', self)
+        group.add_action(launch)
+        group.finalize()
+        self._append_group('Interface', group)
 
 
 class LayoutDesignerSession(QObject):
@@ -682,6 +980,8 @@ class LayoutDesignerSession(QObject):
             return
         self._disposed = True
         self._restore_original()
+        if _qobject_alive(getattr(self, 'widget', None)):
+            self.widget.dispose_search()
         self._chrome.restore()
         if _qobject_alive(self.window):
             try:

@@ -1,4 +1,4 @@
-# Atribuições dos ícones — QRibbonSkin 0.3.1
+# Atribuições dos ícones — QRibbonSkin
 
 - Os arquivos em `resources/icons/` cujo nome corresponde a ícones presentes em
   `arcskin/resources/icons/pro/` (veja a lista abaixo) são **reproduções dos desenhos SVG**
@@ -7,7 +7,7 @@
   Arquivos ArcSkin recuperados em 23 de outubro de 2026.
 - Os ícones `command.svg`, `view.svg`, `file.svg`, `layer.svg`, `web.svg`,
   `print.svg`, `add.svg`, `undo.svg`, `filter.svg`, `share.svg`, `coordinates.svg`,
-  `edit_note.svg` são desenhos originais do QRibbonSkin com traços neutros e leves.
+  `edit_note.svg` e `recent_projects.svg` são desenhos originais do QRibbonSkin com traços neutros e leves.
   Sua estética é *inspirada* em RustGIS (https://github.com/opengeos/RustGIS),
   **sem copiar** código-fonte, desenhos ou recursos deste projeto.
 - Ícones nativos de QGIS/QAction têm prioridade; são apenas lidos em execução,

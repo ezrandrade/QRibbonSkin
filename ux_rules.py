@@ -13,33 +13,65 @@ def normalized(text):
     return ' '.join(re.findall(r'[a-z0-9]+', value))
 
 
+# QRibbonSkin-owned captions use sentence case (PT-BR and EN). This rule
+# never touches native QGIS QAction text, menu titles, shortcuts or routing IDs.
+_PRESERVED_TECHNICAL_WORDS = {
+    'qgis': 'QGIS', 'qribbonskin': 'QRibbonSkin', 'gis': 'GIS', 'sig': 'SIG',
+    'python': 'Python', 'pdf': 'PDF', 'svg': 'SVG', 'rgb': 'RGB', 'kml': 'KML',
+    'csv': 'CSV', 'gcp': 'GCP', 'pct': 'PCT', 'api': 'API', 'sql': 'SQL',
+    'wms': 'WMS', 'wfs': 'WFS', 'wmts': 'WMTS', 'gdal': 'GDAL',
+    'qt': 'Qt', 'qt6': 'Qt6', '3d': '3D', 'cbers': 'CBERS',
+    'stac': 'STAC', 'gps': 'GPS', 'geotiff': 'GeoTIFF',
+}
+
+
+def sentence_label(text):
+    """Format an *owned display caption* without changing its semantics.
+
+    Preserve acronyms, brand spellings, CamelCase identifiers, punctuation,
+    shortcuts and numbers. This function is display-only: callers keep their
+    original identifiers and never run it on QGIS-owned QAction.text().
+    """
+    original = str(text or '')
+    # Keyboard shortcuts are technical notation, not ordinary words: Alt+Q,
+    # Ctrl+Shift+S, etc. Protect them before changing word capitalization.
+    shortcuts = []
+    def protect_shortcut(match):
+        shortcuts.append(match.group(0))
+        return chr(0xE000 + len(shortcuts) - 1)
+    masked = re.sub(
+        r'\b(?:Alt|Ctrl|Shift|Meta|Cmd)(?:\+(?:Alt|Ctrl|Shift|Meta|Cmd|[A-Za-z0-9]+))+\b',
+        protect_shortcut, original, flags=re.IGNORECASE
+    )
+    # Preserve original whitespace and line breaks; only word case changes.
+    token_pattern = re.compile(r'[^\W_]+(?:_[^\W_]+)*', re.UNICODE)
+    first_word = True
+
+    def update(match):
+        nonlocal first_word
+        token = match.group(0)
+        was_first = first_word
+        first_word = False
+        low = token.casefold()
+        if low in _PRESERVED_TECHNICAL_WORDS:
+            return _PRESERVED_TECHNICAL_WORDS[low]
+        if (token.isupper() and len(token) > 1) or '_' in token:
+            return token  # unknown acronym / programmatic identifier
+        if any(c.isupper() for c in token[1:]) and any(c.islower() for c in token):
+            return token  # native product or CamelCase name: ArcSkin, etc.
+        normalized_token = token.lower()
+        return (normalized_token[:1].upper() + normalized_token[1:]
+                if was_first else normalized_token)
+
+    result = token_pattern.sub(update, masked)
+    for index, shortcut in enumerate(shortcuts):
+        result = result.replace(chr(0xE000 + index), shortcut)
+    return result
+
+
 def title_heading(text):
-    """Consistent typographic title style, retaining acronyms and PT particles."""
-    original = str(text or '').strip()
-    small = {'de', 'da', 'do', 'das', 'dos', 'e', 'em', 'para', 'por', 'as', 'os', 'of', 'and', 'the', 'for', 'to'}
-    acronyms = {'qgis', 'gps', 'wms', 'wfs', 'sql', 'api', 'stac', 'gdal', 'gis', 'rgb', '3d', 'pdf', 'csv', 'svg', 'wmts'}
-    pieces = re.split(r'(\s+)', original)
-    result = []
-    ordinal = 0
-    for piece in pieces:
-        if not piece or piece.isspace():
-            result.append(piece)
-            continue
-        match = re.match(r'^([^\w]*)([\w-]+)(.*)$', piece, flags=re.UNICODE)
-        if not match:
-            result.append(piece)
-            continue
-        prefix, word, suffix = match.groups()
-        low = word.casefold()
-        if low in acronyms:
-            word = low.upper()
-        elif ordinal and low in small:
-            word = low
-        else:
-            word = word[:1].upper() + word[1:].lower()
-        result.append(prefix + word + suffix)
-        ordinal += 1
-    return ''.join(result)
+    """Compatibility name for the QRibbonSkin-owned group-title formatter."""
+    return sentence_label(text)
 
 
 def shortcut_role(text):

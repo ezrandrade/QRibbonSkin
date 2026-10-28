@@ -14,11 +14,11 @@ from qgis.core import QgsMessageLog, Qgis
 from qgis.PyQt.QtGui import QAction, QIcon, QKeySequence, QFontMetrics, QPalette, QPainter, QPen, QColor
 from qgis.PyQt.QtWidgets import (
     QApplication, QDialog, QDockWidget, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QLayout,
-    QScrollArea, QSizePolicy, QStyle, QStyleOptionToolButton, QStylePainter, QWidgetAction,
+    QScrollArea, QSizePolicy, QStyle, QStyleOptionToolButton, QStylePainter, QWidgetAction, QComboBox, QCheckBox,
     QTabBar, QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
-from .i18n import tr
+from .i18n import tr, ui_label
 from .native_menus import (iter_native_menus, native_menu_sections, native_caption,
                            inline_limit_for_group, native_action_group_heading,
                            unique_native_group_heading)
@@ -91,7 +91,7 @@ class RibbonActionButton(QToolButton):
 
     def set_display_caption(self, caption):
         """Override only the painted Ribbon caption, never the native QAction."""
-        self._display_caption_override = caption
+        self._display_caption_override = ui_label(caption)
         self._update_width()
 
     def _visible_caption(self):
@@ -415,16 +415,20 @@ class RibbonTaskGroup(QFrame):
         self.content.setSpacing(5)
         self.content.setAlignment(Qt.AlignmentFlag.AlignLeft)
         lay.addLayout(self.content, 1)
-        label = QLabel(heading, self)
+        # Render only the QRibbon-owned group caption. Preserve the original
+        # heading in self._heading for routing/group identity.
+        display_heading = (heading if normalized(heading) == 'rth agriculture mapping tools'
+                           else ui_label(heading))
+        label = QLabel(display_heading, self)
         label.setObjectName("QRibbonSkinGroupLabel")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setFixedHeight(19)
         label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         label.setWordWrap(False)
-        label.setToolTip(heading)
+        label.setToolTip(display_heading)
         # Group labels must influence layout width, rather than be painted
         # inside a button-sized fixed section where half the text gets cut.
-        self.setMinimumWidth(max(88, label.fontMetrics().horizontalAdvance(heading) + 20))
+        self.setMinimumWidth(max(88, label.fontMetrics().horizontalAdvance(display_heading) + 20))
         lay.addWidget(label)
 
     @property
@@ -500,7 +504,7 @@ class RibbonTaskGroup(QFrame):
         content_width = lead_width + sum(columns) + max(0, n - 1) * self.content.spacing()
         margins = self.layout().contentsMargins()
         heading_width = self.findChild(QLabel, 'QRibbonSkinGroupLabel')
-        label_width = (heading_width.fontMetrics().horizontalAdvance(self._heading) + 20
+        label_width = (heading_width.fontMetrics().horizontalAdvance(heading_width.text()) + 20
                        if heading_width is not None else 0)
         target = max(88, label_width, content_width + margins.left() + margins.right() + 4)
         self.setMinimumWidth(target)
@@ -563,16 +567,18 @@ class RibbonTaskGroup(QFrame):
         self._peer_buttons.append(button)
         self._recalculate_group_width()
 
-    def add_primary_dropdown(self, primary, choices, label=None):
+    def add_primary_dropdown(self, primary, choices, label=None, menu_caption_overrides=None):
         """A principal QGIS action plus an arrow exposing related native actions.
 
-        No QAction is copied or reparented: menu owns only presentation links.
+        Native QActions remain owned by QGIS. Optional menu-only caption aliases
+        forward activation to their original action and never rename it globally.
         The main part triggers primary; the arrow opens a full menu.
         """
         if primary is None:
             return
         menu = QMenu(label or native_caption(primary.text()), self)
         seen = set()
+        aliases = []
         for action in choices:
             if action is None or action.isSeparator() or id(action) in seen:
                 continue
@@ -580,8 +586,29 @@ class RibbonTaskGroup(QFrame):
             if action.menu() is not None:
                 # Preserve the native submenu rather than silently losing its tools.
                 menu.addMenu(action.menu())
+            elif menu_caption_overrides and id(action) in menu_caption_overrides:
+                # Presentation alias: show "Linha" in the measurement dropdown
+                # while the native "Medir Linha" QAction/shortcut stays intact.
+                proxy = QAction(action.icon(), ui_label(menu_caption_overrides[id(action)]), menu)
+                proxy.setToolTip(action.toolTip())
+                proxy.triggered.connect(
+                    lambda _checked=False, native=action: native.trigger())
+                menu.addAction(proxy)
+                aliases.append((action, proxy))
             else:
                 menu.addAction(action)
+        if aliases:
+            def refresh_aliases():
+                # Read QGIS state when opening; do not duplicate action state.
+                for native, proxy in aliases:
+                    proxy.setEnabled(native.isEnabled())
+                    proxy.setVisible(native.isVisible())
+                    proxy.setCheckable(native.isCheckable())
+                    if native.isCheckable():
+                        proxy.setChecked(native.isChecked())
+                    proxy.setIcon(native.icon())
+            menu.aboutToShow.connect(refresh_aliases)
+            refresh_aliases()
         button = RibbonActionButton(self)
         button.setDefaultAction(primary)
         button.setMenu(menu)
@@ -1121,14 +1148,16 @@ class RibbonWidget(QWidget):
         self._last_menu_fingerprint = self._native_menu_fingerprint()
         self._raster_source_high_water = self._diagnostic_raster_actions()
         self._log_raster_diagnostic('Inicialização')
-        # QGIS and third-party plugins may register actions asynchronously.
-        # Rebuild only if the underlying QGIS QAction tree actually changed.
-        # Some QGIS plugins populate existing QMenu objects lazily, without a
-        # reliably detectable change in QAction identities. Perform a bounded
-        # post-startup rebuild even if the fingerprint is unchanged.
+        # Changes made by QGIS or third-party plugins are checked independently
+        # of tab navigation. A steady snapshot must be observed twice before
+        # a refresh; short-lived empty menus cannot replace a complete Ribbon.
+        self._pending_menu_fingerprint = None
+        self._pending_menu_observations = 0
+        self._menu_watch = QTimer(self)
+        self._menu_watch.setInterval(3000)
+        self._menu_watch.timeout.connect(self._refresh_if_menu_changed)
+        self._menu_watch.start()
         QTimer.singleShot(1800, self._refresh_if_menu_changed)
-        QTimer.singleShot(6500, self._refresh_if_menu_changed)
-        QTimer.singleShot(12000, self._refresh_if_menu_changed)
 
     def eventFilter(self, watched, event):  # noqa: N802
         if event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
@@ -1267,7 +1296,8 @@ class RibbonWidget(QWidget):
 
     def _on_tab_changed(self, index):
         if hasattr(self, '_last_menu_fingerprint') and not getattr(self, '_rebuilding_menus', False):
-            QTimer.singleShot(0, self._refresh_if_menu_changed)
+            # Switching tabs is purely a UI operation and must not trigger a
+            # full Ribbon rebuild. The independent watcher handles new plugins.
             # Raster plugins sometimes fill pre-existing menus lazily, leaving
             # QAction identity fingerprints unchanged. Refresh once upon entry,
             # without making the user press Interface > Atualizar menus.
@@ -1500,9 +1530,9 @@ class RibbonWidget(QWidget):
                 # Keep the requested five-button geometry stable. Never
                 # synthesize a command that is not backed by a QGIS QAction.
                 btn.setEnabled(False)
-                btn.setText({'new': 'Novo Projeto', 'open': 'Abrir Projeto',
+                btn.setText(ui_label({'new': 'Novo Projeto', 'open': 'Abrir Projeto',
                              'save': 'Salvar Projeto', 'undo': 'Desfazer',
-                             'redo': 'Refazer'}[role])
+                             'redo': 'Refazer'}[role]))
                 btn.setToolTip(btn.text() + ' (ação nativa indisponível)')
             btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
             lay.addWidget(btn)
@@ -1812,6 +1842,35 @@ class RibbonWidget(QWidget):
             return 999
         primary = min(actions, key=score)
         group.add_primary_dropdown(primary, actions, heading)
+        # Presentation-only caption: keep the QGIS QAction, its native text,
+        # shortcut, tooltip and trigger unchanged in both locales.
+        if heading == 'Editar Atributos' and group._lead is not None:
+            group._lead.set_display_caption('Feições Selecionadas')
+        return True
+
+    def _edit_geometry_dropdown(self, row, heading, actions):
+        """Compact Edit Geometry with the original Move Features QAction as lead."""
+        if normalized(heading) not in ('editar geometria', 'edit geometry'):
+            return False
+        candidates = [a for a in actions if isinstance(a, QAction)
+                      and not a.isSeparator() and not isinstance(a, QWidgetAction)]
+        def is_move_features(action):
+            name = action.objectName().lower()
+            caption = normalized(action.text())
+            return (name in ('mactionmovefeature', 'mactionmovefeatures',
+                             'actionmovefeature', 'actionmovefeatures') or
+                    caption in ('mover feicoes', 'mover feicao',
+                                'move feature', 'move features'))
+        primary = next((a for a in candidates if is_move_features(a)), None)
+        if primary is None:
+            primary = self._safe_iface('actionMoveFeature')
+        if not isinstance(primary, QAction):
+            return False  # Do not replace the native section with the wrong lead.
+        ordered = [primary] + [a for a in candidates if a is not primary]
+        group = self._add_task_group(row, title_heading(tr('Editar Geometria')))
+        group.add_primary_dropdown(primary, ordered, 'Editar Geometria')
+        if group._lead is not None:
+            group._lead.set_display_caption('Mover Feições')
         return True
 
     def _edit_special_section(self, heading, actions):
@@ -1836,12 +1895,13 @@ class RibbonWidget(QWidget):
         title = normalized(heading)
         if not actions:
             return False
-        captions = lambda a: normalized(a.text())
+        def captions(action):
+            return normalized(action.text())
         if any(k in title for k in ('perfis de usuarios', 'user profiles', 'profiles')):
             primary = next((a for a in actions if captions(a) == 'default'), None)
             if primary is None:
                 return False
-            group = self._add_task_group(row, title_heading('Perfis de Usuários'))
+            group = self._add_task_group(row, title_heading(tr('Perfis de Usuários')))
             # A native QGIS profiles submenu may populate on aboutToShow.
             # Keep that original submenu when available.
             if native_menu is not None:
@@ -1883,7 +1943,7 @@ class RibbonWidget(QWidget):
         second = next((a for a in actions if any(k in captions(a) for k in secondary)), None)
         if first is None:
             return False
-        group = self._add_task_group(row, title_heading(section))
+        group = self._add_task_group(row, title_heading(tr(section)))
         group.add_action(first)
         if second is not None:
             self._settings_interface_action = second
@@ -1940,7 +2000,7 @@ class RibbonWidget(QWidget):
         if primary is None:
             return False
         extras = self._view_related_actions.get(key, ()) if key else ()
-        group = self._add_task_group(row, title_heading(display_heading))
+        group = self._add_task_group(row, title_heading(tr(display_heading)))
         group.add_primary_dropdown(primary, list(dict.fromkeys([*actions, *extras])),
                                    native_caption(primary.text()))
         self._moved_action_ids.update(id(a) for a in extras if a is not primary)
@@ -1967,7 +2027,7 @@ class RibbonWidget(QWidget):
             primary = primary_named(words)
             if primary is None:
                 return False
-            group = self._add_task_group(row, title_heading(section_name))
+            group = self._add_task_group(row, title_heading(tr(section_name)))
             extras_key = {'Visualização': 'ultima', 'Dicas do Mapa': 'dicas',
                           'Visualização de Mapa 3D': '3d',
                           'Modo de Pré-Visualização': 'preview'}.get(section_name)
@@ -1976,18 +2036,16 @@ class RibbonWidget(QWidget):
             group.add_primary_dropdown(primary, all_actions, section_name)
             self._moved_action_ids.update(id(a) for a in additions if a is not primary)
             if caption is not None:
-                group._lead.setText(caption)  # visual caption only, not QAction
-                group._lead._update_width()
+                group._lead.set_display_caption(caption)  # never modify QAction
             return True
 
         if title in ('nova visualizacao de mapa', 'new map view', 'vista de mapa'):
             primary = primary_named(('nova visualizacao de mapa', 'new map view'))
             if primary is None:
                 return False
-            group = self._add_task_group(row, title_heading('Vista de Mapa'))
+            group = self._add_task_group(row, title_heading(tr('Vista de Mapa')))
             group.add_action(primary)
-            group._lead.setText('Novo')
-            group._lead._update_width()
+            group._lead.set_display_caption('Novo')
             return True
         if ('visualizacao de mapa 3d' in title or '3d map view' in title
                 or '3d map views' in title or 'visualizacoes de mapa 3d' in title):
@@ -2070,8 +2128,7 @@ class RibbonWidget(QWidget):
         labels = {
             'Navegação do Mapa': (('deslocar mapa', 'pan map', 'pan'),
                                   (('aproximar', 'zoom in'), ('afastar', 'zoom out'))),
-            'Medir': (('medir linha', 'measure line', 'medir distancia', 'measure distance'),
-                      (('linha', 'distancia', 'distance', 'line'), ('area',))),
+            'Medir': (('medir area', 'measure area', 'area'), ()),
             'Criar Nova Camada': (('criar nova camada', 'new layer', 'nova camada'), ()),
             'Adicionar Camada': (('adicionar camada vetorial', 'add vector layer', 'camada vetorial', 'vector layer'), ()),
             'Tabela de Atributos': (('abrir tabela de atributos', 'open attribute table', 'attribute table'), ()),
@@ -2091,26 +2148,41 @@ class RibbonWidget(QWidget):
                     if word in caption(action):
                         return action
             return None
-        # Prefer the native select-tool action, never the similarly named
-        # "Select Features by Value" command.  Match the line measurement
-        # action rather than azimuth when choosing the measurement leader.
+        # QGIS has several "Select..." commands with similar translated
+        # captions.  String matching can accidentally select "By Expression"
+        # as the Ribbon default.  Resolve the actual QGIS select-features
+        # QAction instead of guessing from captions or toolbar ordering.
         if heading == 'Selecionar':
-            candidates = [a for a in actions if not any(term in caption(a)
-                           for term in ('por valor', 'by value', 'por expressao',
-                                        'by expression', 'by location', 'por localizacao'))]
-            leader = find_action(primary_words, candidates)
-        elif heading == 'Medir':
-            candidates = [a for a in actions if not any(term in caption(a)
-                           for term in ('azimute', 'azimuth', 'area', 'angulo', 'angle'))]
-            leader = find_action(primary_words, candidates)
+            leader = self._safe_iface('actionSelect')
+            if not isinstance(leader, QAction):
+                # Exact native objectName (QGIS 4.x): mActionSelectFeatures.
+                # Account for a menu that was not yet populated at startup.
+                candidates = actions + self.iface.mainWindow().findChildren(QAction)
+                leader = next((action for action in candidates
+                               if action.objectName() == 'mActionSelectFeatures'), None)
             if leader is None:
-                leader = find_action(('linha', 'line', 'distancia', 'distance'), candidates)
+                # Strict exact-text compatibility fallback: never promote
+                # Select by Expression/Value to the main button.
+                leader = next((action for action in actions
+                               if caption(action) in ('selecionar feicao',
+                                                      'selecionar feicoes',
+                                                      'selecionar feicao(s)',
+                                                      'select feature',
+                                                      'select features',
+                                                      'feicao(s)')), None)
+            if leader is not None and all(action is not leader for action in actions):
+                actions.insert(0, leader)
+        elif heading == 'Medir':
+            # Match Area exactly first (not azimuth, angle or line). The
+            # public QgisInterface action is a fallback for menu variations.
+            leader = find_action(('area', 'medir area', 'measure area'), actions)
+            if leader is None:
+                native_area = self._safe_iface('actionMeasureArea')
+                if isinstance(native_area, QAction):
+                    leader = native_area
+                    actions.append(native_area)
         else:
             leader = find_action(primary_words, actions)
-        if heading == 'Selecionar' and leader is None and actions:
-            # Do not make Select by Value the main selection action.
-            leader = next((a for a in actions if 'valor' not in caption(a)
-                           and 'value' not in caption(a)), None)
         if leader is None:
             # A submenu may be registered but not populated yet; retain full
             # original UI rather than silently dropping its commands.
@@ -2121,13 +2193,31 @@ class RibbonWidget(QWidget):
                     group.add_action(item)
             return
         if not secondaries:
-            group.add_primary_dropdown(leader, actions)
+            if heading == 'Medir':
+                # The Area button invokes the native QGIS measurement action;
+                # all other commands live in its dropdown, including Line.
+                other_actions = [action for action in actions if action is not leader]
+                aliases = {}
+                line = find_action(('medir linha', 'measure line',
+                                    'medir distancia', 'measure distance',
+                                    'linha', 'line'), other_actions)
+                if line is not None:
+                    aliases[id(line)] = 'Linha'
+                group.add_primary_dropdown(leader, other_actions,
+                                           menu_caption_overrides=aliases)
+            elif heading == 'Selecionar':
+                # The lead is exclusively Select Features; the arrow exposes
+                # the remaining selection methods without duplicating it.
+                group.add_primary_dropdown(
+                    leader, [action for action in actions if action is not leader])
+            else:
+                group.add_primary_dropdown(leader, actions)
             if heading == 'Adicionar Camada' and group._lead is not None:
                 group._lead.set_display_caption('Camada Vetorial')
             elif heading == 'Selecionar' and group._lead is not None:
-                group._lead.set_display_caption('Selecionar Feição')
+                group._lead.set_display_caption('Feição(s)')
             elif heading == 'Medir' and group._lead is not None:
-                group._lead.set_display_caption('Medir Linha')
+                group._lead.set_display_caption('Área')
             elif heading == 'Layout de Impressão' and group._lead is not None:
                 group._lead.set_display_caption('Novo Layout')
             return
@@ -2152,18 +2242,33 @@ class RibbonWidget(QWidget):
         self._principal_page = self._native_pages[-1]
         order = ('Criar Nova Camada', 'Adicionar Camada',
                  'Navegação do Mapa', 'Ver Tudo', 'Edição de Camadas',
-                 'Selecionar', 'Medir', 'Identificar Feições',
+                 'Vetorização', 'Selecionar', 'Medir', 'Identificar Feições',
                  'Tabela de Atributos', 'Georreferenciador',
                  'Caixa de Ferramentas', 'Layout de Impressão')
         # Explicitly unique headings prevent repeated tool sections.
         order = tuple(dict.fromkeys(order))
         for heading in order:
+            if heading == 'Vetorização':
+                # Present the same native QGIS actions in Principal and Editar.
+                # QActions may have multiple presentation widgets; their
+                # ownership, shortcuts and enabled/checked state stay native.
+                self._add_edit_digitizing_toolbars(row, only_heading='Vetorização')
+                continue
             if heading in ('Navegação do Mapa', 'Medir', 'Selecionar', 'Criar Nova Camada',
                            'Adicionar Camada', 'Tabela de Atributos',
                            'Layout de Impressão'):
                 self._add_principal_ergonomic_group(row, heading, self._principal_bins.get(heading, ()))
             else:
-                self._add_workspace_group(row, heading, self._principal_bins.get(heading, ()))
+                items = self._principal_bins.get(heading, ())
+                if heading == 'Edição de Camadas':
+                    # Prevent duplicate Toggle Editing within Principal: it is
+                    # now presented by the separate Vetorização group.
+                    toggle = self._safe_iface('actionToggleEditing')
+                    items = [(kind, action, caption) for kind, action, caption in items
+                             if action is not toggle and not (
+                                 kind == 'action' and normalized(action.text()) in
+                                 ('alternar edicao', 'toggle editing'))]
+                self._add_workspace_group(row, heading, items)
         row.addStretch(1)
 
     @staticmethod
@@ -2400,6 +2505,294 @@ class RibbonWidget(QWidget):
         for position, group in enumerate(desired):
             row.insertWidget(position, group)
 
+    def _add_snapping_widget_proxy(self, group, source):
+        """Mirror toolbar widgets without moving QGIS-owned controls.
+
+        QToolButton menus stay native and live. Checkboxes and comboboxes
+        use small synchronized proxies because Qt widgets have one parent.
+        Unrecognized widget types are not rendered as empty menu rows.
+        """
+        if isinstance(source, QToolButton):
+            native_action = source.defaultAction()
+            native_menu = source.menu()
+            if native_menu is None and isinstance(native_action, QAction):
+                native_menu = native_action.menu()
+            if native_menu is not None:
+                caption = (native_caption(source.text()) or
+                           native_caption(native_action.text()) if native_action is not None
+                           else native_caption(source.text()))
+                group.add_menu(caption or native_caption(native_menu.title()) or
+                               'Ferramentas de Aderência', native_menu, source.icon())
+            elif isinstance(native_action, QAction):
+                group.add_action(native_action)
+            return
+        if isinstance(source, QComboBox):
+            proxy = QComboBox(group)
+            proxy.setToolTip(source.toolTip())
+            proxy.setMinimumWidth(max(105, min(185, source.sizeHint().width())))
+            def refill():
+                proxy.blockSignals(True)
+                proxy.clear()
+                for index in range(source.count()):
+                    proxy.addItem(source.itemIcon(index), source.itemText(index),
+                                  source.itemData(index))
+                    proxy.setItemData(index, source.itemData(index, Qt.ItemDataRole.ToolTipRole),
+                                      Qt.ItemDataRole.ToolTipRole)
+                proxy.setCurrentIndex(source.currentIndex())
+                proxy.setEnabled(source.isEnabled())
+                proxy.blockSignals(False)
+            refill()
+            proxy.currentIndexChanged.connect(source.setCurrentIndex)
+            source.currentIndexChanged.connect(proxy.setCurrentIndex)
+            source.model().rowsInserted.connect(lambda *_args: refill())
+            source.model().rowsRemoved.connect(lambda *_args: refill())
+            source.model().modelReset.connect(refill)
+            group.content.addWidget(proxy)
+            group._recalculate_group_width()
+            return
+        if isinstance(source, QCheckBox):
+            proxy = QCheckBox(source.text(), group)
+            proxy.setToolTip(source.toolTip())
+            proxy.setChecked(source.isChecked())
+            proxy.toggled.connect(source.setChecked)
+            source.toggled.connect(proxy.setChecked)
+            group.content.addWidget(proxy)
+            group._recalculate_group_width()
+            return
+        # QGIS versions may introduce other specialized toolbar widgets.
+        # Do not misrepresent them with an inert control or steal ownership.
+        QgsMessageLog.logMessage(
+            'Unsupported Snapping toolbar widget: ' + type(source).__name__,
+            'QRibbonSkin', Qgis.MessageLevel.Warning)
+
+    def _snapping_menu_label(self, action=None, widget=None, native_menu=None):
+        """Provide a readable caption without changing QGIS-owned actions."""
+        candidates = []
+        if action is not None:
+            candidates.extend((action.text(), action.toolTip(), action.statusTip()))
+        if widget is not None:
+            candidates.extend((widget.toolTip(), widget.whatsThis(), widget.objectName()))
+        if native_menu is not None:
+            candidates.extend((native_menu.title(), native_menu.toolTip()))
+        for candidate in candidates:
+            caption = native_caption(candidate or '').strip()
+            if caption:
+                return caption
+        return 'Opções de Aderência'
+
+    def _append_snapping_menu_control(self, menu, source):
+        """Mirror QGIS-owned toolbar controls as proper selectable menu actions.
+
+        Embedding QComboBox via QWidgetAction inside QMenu loses keyboard/mouse
+        interaction in certain QGIS/Qt6 configurations. Build a real submenu
+        of checkable actions instead, refreshed each time it opens.
+        """
+        if isinstance(source, QToolButton):
+            native_menu = source.menu()
+            native_action = source.defaultAction()
+            if native_menu is None and isinstance(native_action, QAction):
+                native_menu = native_action.menu()
+            if native_menu is not None:
+                link = QAction(self._snapping_menu_label(native_action, source, native_menu), menu)
+                link.setIcon(source.icon())
+                link.setMenu(native_menu)
+                menu.addAction(link)
+                return True
+            if isinstance(native_action, QAction):
+                if native_caption(native_action.text()):
+                    menu.addAction(native_action)
+                    return True
+        if isinstance(source, QComboBox):
+            caption = self._snapping_menu_label(widget=source)
+            if caption == 'Opções de Aderência' and any(
+                    source.itemText(i).strip().lower() in ('px', 'pixels', 'm', 'metros', 'meters')
+                    for i in range(source.count())):
+                caption = 'Unidades de aderência'
+            submenu = QMenu(caption, menu)
+            def populate():
+                submenu.clear()
+                for index in range(source.count()):
+                    label = source.itemText(index).strip()
+                    if not label:
+                        label = source.itemData(index, Qt.ItemDataRole.ToolTipRole) or f'Opção {index + 1}'
+                    item = QAction(source.itemIcon(index), str(label), submenu)
+                    item.setCheckable(True)
+                    item.setChecked(index == source.currentIndex())
+                    item.setEnabled(source.isEnabled())
+                    item.triggered.connect(lambda _checked=False, selected=index: source.setCurrentIndex(selected))
+                    submenu.addAction(item)
+                if submenu.isEmpty():
+                    empty = submenu.addAction('Nenhuma opção disponível')
+                    empty.setEnabled(False)
+            submenu.aboutToShow.connect(populate)
+            menu.addMenu(submenu)
+            return True
+        if isinstance(source, QCheckBox):
+            action = QAction(self._snapping_menu_label(widget=source), menu)
+            action.setCheckable(True)
+            action.setChecked(source.isChecked())
+            action.setEnabled(source.isEnabled())
+            action.toggled.connect(source.setChecked)
+            source.toggled.connect(action.setChecked)
+            menu.addAction(action)
+            return True
+        return False
+
+    def _add_edit_digitizing_toolbars(self, row, only_heading=None):
+        """Expose native QGIS digitizing toolbar actions in Ribbon groups.
+
+        With ``only_heading='Vetorização'``, reuse the exact same native
+        QActions in Principal while retaining the full set in Editar.
+        Toolbars and QActions remain owned by QGIS; no actions are cloned.
+        """
+        toolbars = self.iface.mainWindow().findChildren(QToolBar)
+        roles = (
+            ('Vetorização', ('mdigitizetoolbar', 'digitizetoolbar'),
+             ('digitizing', 'digitalizacao', 'digitalização', 'vetorizacao', 'vetorização')),
+            ('Vetorização Avançada', ('madvanceddigitizetoolbar', 'advanceddigitizetoolbar'),
+             ('advanced digitizing', 'digitalizacao avancada', 'digitalização avançada',
+              'vetorizacao avancada', 'vetorização avançada')),
+            ('Aderência', ('msnappingtoolbar', 'snappingtoolbar'),
+             ('snapping', 'aderencia', 'aderência')),
+        )
+        taken = set()
+        for heading, object_names, captions in roles:
+            if only_heading is not None and heading != only_heading:
+                continue
+            selected = None
+            for toolbar in toolbars:
+                if id(toolbar) in taken:
+                    continue
+                name = toolbar.objectName().lower()
+                title = normalized(toolbar.windowTitle())
+                if (name in object_names or
+                    any(label in title for label in captions)):
+                    # Plain digitizing should not capture Advanced Digitizing.
+                    if heading == 'Vetorização' and ('advanced' in name or 'advanced' in title
+                                                     or 'avancad' in title):
+                        continue
+                    selected = toolbar
+                    break
+            if selected is None:
+                continue
+            taken.add(id(selected))
+            # Native QToolBar actions include QMenu-bearing dropdowns and
+            # QWidgetAction controls.  Dropping either kind loses QGIS snapping
+            # tools, even though the toolbar itself is correctly discovered.
+            # Preserve them for the Snapping group while keeping the existing
+            # consolidated presentations of the two digitizing groups.
+            toolbar_actions = [action for action in selected.actions()
+                               if isinstance(action, QAction) and not action.isSeparator()]
+            actions = [action for action in toolbar_actions
+                       if not isinstance(action, QWidgetAction)
+                       and action.menu() is None and bool(native_caption(action.text()))]
+            if heading == 'Aderência':
+                # Compact layout: one main native toggle with a single popup.
+                # QWidgetAction contents need menu-local proxies, not the
+                # toolbar-owned widgets themselves (which yield blank rows).
+                toggle = self._safe_iface('actionSnapping')
+                if not isinstance(toggle, QAction):
+                    toggle = next((action for action in toolbar_actions
+                                   if not isinstance(action, QWidgetAction)
+                                   and ('snapping' in normalized(action.text())
+                                        or 'aderencia' in normalized(action.text()))
+                                   and ('toggle' in normalized(action.text())
+                                        or 'alternar' in normalized(action.text()))), None)
+                if not isinstance(toggle, QAction):
+                    toggle = next((action for action in toolbar_actions
+                                   if not isinstance(action, QWidgetAction)
+                                   and action.isCheckable() and action.menu() is None), None)
+                group = self._add_task_group(row, title_heading(tr(heading)))
+                popup = QMenu('Aderência', group)
+                seen = set()
+                if isinstance(toggle, QAction):
+                    popup.addAction(toggle)
+                    seen.add(id(toggle))
+                for action in toolbar_actions:
+                    if id(action) in seen:
+                        continue
+                    seen.add(id(action))
+                    native_widget = selected.widgetForAction(action)
+                    if isinstance(action, QWidgetAction):
+                        if native_widget is None:
+                            native_widget = action.defaultWidget()
+                        if native_widget is not None:
+                            self._append_snapping_menu_control(popup, native_widget)
+                        continue
+                    submenu = action.menu()
+                    if submenu is None and isinstance(native_widget, QToolButton):
+                        submenu = native_widget.menu()
+                    if submenu is not None:
+                        # QAction text can be empty even when its native QMenu
+                        # is functional. Never add an unlabeled row to Ribbon.
+                        label = self._snapping_menu_label(action, native_widget, submenu)
+                        if native_caption(action.text()).strip():
+                            popup.addAction(action)
+                        else:
+                            link = QAction(label, popup)
+                            link.setIcon(action.icon())
+                            link.setMenu(submenu)
+                            popup.addAction(link)
+                    elif native_caption(action.text()):
+                        popup.addAction(action)
+                if isinstance(toggle, QAction):
+                    # A menu-button has a direct native action plus arrow.
+                    button = RibbonActionButton(group)
+                    button.setDefaultAction(toggle)
+                    button.setMenu(popup)
+                    button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+                    button.set_caption_color(QColor(light_palette()['text']))
+                    group._original_item_count += 1
+                    group._append(button)
+                    button.set_display_caption('Alternar Aderência')
+                    group.content.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+                elif not popup.isEmpty():
+                    group.add_menu('Aderência', popup)
+                continue
+            if heading == 'Vetorização':
+                # Prefer the official QgisInterface action; locate by label as a
+                # fallback for builds with translated or reorganized toolbars.
+                toggle = self._safe_iface('actionToggleEditing')
+                if not isinstance(toggle, QAction):
+                    toggle = next((action for action in actions if
+                                   normalized(action.text()) in
+                                   ('alternar edicao', 'toggle editing')), None)
+                if isinstance(toggle, QAction):
+                    choices = [toggle] + [action for action in actions if action is not toggle]
+                    group = self._add_task_group(row, title_heading(tr(heading)))
+                    group.add_primary_dropdown(toggle, choices)
+                    if group._lead is not None:
+                        group._lead.set_display_caption('Alternar Edição')
+                    continue
+            if heading == 'Vetorização Avançada' and actions:
+                # Use the original QGIS Split Features QAction for the main control.
+                # Prefer the official interface method, then objectName and
+                # translated text, as QGIS versions may expose it differently.
+                split = self._safe_iface('actionSplitFeatures')
+                if not isinstance(split, QAction):
+                    split = next((action for action in actions
+                                  if action.objectName().lower() in
+                                  ('mactionsplitfeatures', 'actionsplitfeatures')), None)
+                if not isinstance(split, QAction):
+                    split = next((action for action in actions
+                                  if normalized(action.text()) in
+                                  ('quebrar feicoes', 'dividir feicoes', 'split features')), None)
+                if not isinstance(split, QAction):
+                    split = next((action for action in
+                                  self.iface.mainWindow().findChildren(QAction)
+                                  if action.objectName().lower() == 'mactionsplitfeatures'), None)
+                if isinstance(split, QAction):
+                    choices = [split] + [action for action in actions if action is not split]
+                    group = self._add_task_group(row, title_heading(tr(heading)))
+                    group.add_primary_dropdown(split, choices)
+                    if group._lead is not None:
+                        group._lead.set_display_caption('Quebrar Feições')
+                    continue
+            if actions:
+                self._add_workspace_group(
+                    row, heading,
+                    [('action', action, native_caption(action.text())) for action in actions])
+
     def _append_native_menu(self, row, root_title, root_menu, seen):
         """Render native submenu hierarchy without moving QGIS actions.
 
@@ -2410,7 +2803,22 @@ class RibbonWidget(QWidget):
         The original QMenuBar determines placement and translated captions.
         """
         is_raster_root = self._is_raster_root(root_menu, root_title)
+        is_edit_root = root_menu is self._safe_iface('editMenu')
+        is_plugins_root = (root_menu is self._safe_iface('pluginMenu')
+                           or normalized(root_title) in ('complementos', 'plugins'))
+        digitizing_inserted = False
         populated = False
+        # Keep the plugin manager visible even if QGIS briefly rearranges its
+        # native menu while plugins register actions. This is QGIS's own QAction,
+        # not a proxy command, and is added only once per native tab rebuild.
+        manage_plugins = self._safe_iface('actionManagePlugins') if is_plugins_root else None
+        if isinstance(manage_plugins, QAction):
+            manager = self._add_task_group(row, 'Complementos')
+            manager.add_action(manage_plugins)
+            if manager._lead is not None:
+                manager._lead.set_display_caption('Gerenciar e Instalar')
+            seen.add(id(manage_plugins))
+            populated = True
         used_headings = set()
         is_layer_root = root_menu is self._safe_iface('layerMenu')
         layer_clipboard = []
@@ -2485,6 +2893,28 @@ class RibbonWidget(QWidget):
         if is_raster_root:
             sections_for_display = self._ordered_raster_sections(sections_for_display)
         for section_type, title, payload in sections_for_display:
+            # Suppress only the redundant native manager submenu. Other plugin
+            # categories retain their own menus, including lazy placeholders.
+            if (is_plugins_root and isinstance(manage_plugins, QAction)
+                    and normalized(title) in ('gerenciar e instalar complementos',
+                                              'manage and install plugins',
+                                              'manage plugins', 'gerenciar complementos')):
+                source_actions = (payload if section_type == 'actions'
+                                  else self._recursive_menu_actions(payload))
+                if not source_actions or all(a is manage_plugins for a in source_actions):
+                    continue
+            if is_edit_root and not digitizing_inserted:
+                section_label = normalized(title)
+                section_actions = (payload if section_type == 'actions'
+                                   else self._recursive_menu_actions(payload))
+                is_attributes = ('editar atributos' in section_label or
+                                 'edit attributes' in section_label or
+                                 any(self._edit_special_section(title, [a]) is not None and
+                                     self._edit_special_section(title, [a])[0] == 'Editar Atributos'
+                                     for a in section_actions if isinstance(a, QAction)))
+                if is_attributes:
+                    self._add_edit_digitizing_toolbars(row)
+                    digitizing_inserted = True
             if section_type == "actions":
                 actions = [a for a in payload
                            if self._is_native_command(a) and id(a) not in seen
@@ -2550,6 +2980,12 @@ class RibbonWidget(QWidget):
                     used_headings.add(heading)
                     for action in actions:
                         seen.add(id(action))
+                    populated = True
+                    continue
+                if (root_menu is self._safe_iface('editMenu') and
+                        self._edit_geometry_dropdown(row, heading, actions)):
+                    seen.update(id(a) for a in actions)
+                    used_headings.add(heading)
                     populated = True
                     continue
                 special = (self._edit_special_section(heading, actions)
@@ -2652,6 +3088,12 @@ class RibbonWidget(QWidget):
                         seen.add(id(action))
                     populated = True
                     continue
+            if (root_menu is self._safe_iface('editMenu') and not needs_native_popup
+                    and self._edit_geometry_dropdown(row, heading, actions)):
+                seen.update(id(a) for a in actions)
+                used_headings.add(heading)
+                populated = True
+                continue
             special = (self._edit_special_section(heading, actions)
                        if root_menu is self._safe_iface('editMenu') else None)
             if special and not needs_native_popup:
@@ -2727,6 +3169,9 @@ class RibbonWidget(QWidget):
             if is_rth and group._lead is not None:
                 group._lead.set_display_caption('Catálogo de Cenas')
             populated = True
+
+        if is_edit_root and not digitizing_inserted:
+            self._add_edit_digitizing_toolbars(row)
 
         if is_layer_root and layer_clipboard and not layer_clipboard_added:
             add_layer_clipboard()
@@ -2824,8 +3269,8 @@ class RibbonWidget(QWidget):
         prior = getattr(self, '_raster_source_high_water', (0, 0))
         self._log_raster_diagnostic('Entrada na guia', f'anterior={prior}')
         if current[0] > prior[0] or current[1] > prior[1]:
-            self._log_raster_diagnostic('Novas ações detectadas; reconstruindo')
-            self._refresh_native_tabs()
+            self._log_raster_diagnostic('Novas ações detectadas; aguardando estabilidade')
+            self._refresh_if_menu_changed()
         self._raster_source_high_water = tuple(max(a, b) for a, b in zip(prior, current))
 
     def _native_menu_fingerprint(self):
@@ -2840,59 +3285,94 @@ class RibbonWidget(QWidget):
         return tuple(signature)
 
     def _startup_force_refresh(self):
-        """One bounded post-load rebuild for late-populated QGIS plugin menus."""
-        if not self.isVisible() or getattr(self, '_rebuilding_menus', False):
-            return
-        self._refresh_native_tabs()
+        """Compatibility hook: request a stable refresh, never force a rebuild."""
+        self._refresh_if_menu_changed()
 
     def _refresh_if_menu_changed(self):
-        """Catch actions registered after QGIS finishes loading external plugins."""
-        if getattr(self, '_rebuilding_menus', False):
+        """Update only after a native menu change is observed twice unchanged.
+
+        Never rebuild merely because the user switched tabs. Avoid refreshing
+        during native popup use, when QGIS may be populating actions lazily.
+        The Interface > Atualizar menus command still allows an immediate
+        explicit refresh when a plugin changes menus in an unusual way.
+        """
+        if (getattr(self, '_rebuilding_menus', False)
+                or not self.isVisible()
+                or QApplication.activePopupWidget() is not None):
             return
         current = self._native_menu_fingerprint()
-        if current and current != getattr(self, '_last_menu_fingerprint', None):
-            self._log_raster_diagnostic('Árvore de menus alterada')
+        if not current:
+            return
+        if current == getattr(self, '_last_menu_fingerprint', None):
+            self._pending_menu_fingerprint = None
+            self._pending_menu_observations = 0
+            return
+        if current != getattr(self, '_pending_menu_fingerprint', None):
+            self._pending_menu_fingerprint = current
+            self._pending_menu_observations = 1
+            return
+        self._pending_menu_observations += 1
+        if self._pending_menu_observations >= 2:
+            self._log_raster_diagnostic('Árvore de menus alterada e estabilizada')
             self._refresh_native_tabs()
 
     def _refresh_native_tabs(self):
-        """Rebuild task views after plugins change QGIS menus or toolbars."""
-        if getattr(self, "_rebuilding_menus", False):
+        """Rebuild after a stable external change, without intermediate paints.
+
+        Qt normally repaints each removed/inserted QTabWidget page, causing
+        the visible 'piscadas'. Block those updates and tab-change signals
+        for the entire transaction, then notify the dashboard just once.
+        """
+        if getattr(self, '_rebuilding_menus', False):
             return
         self._rebuilding_menus = True
         selected_label = self.tabs.tabText(self.tabs.currentIndex())
-        self.tabs.setCurrentWidget(self._interface_page)
-        for page in self._native_pages:
-            ix = self.tabs.indexOf(page)
-            if ix >= 0:
-                self.tabs.removeTab(ix)
-            page.deleteLater()
-        self._native_pages.clear()
-        self._groups = [g for g in self._groups if g not in self._native_groups]
-        self._native_groups.clear()
-        # Menus created by this plugin belong to the old pages.
-        for menu in self._task_menus:
-            menu.deleteLater()
-        self._task_menus.clear()
-        self._build_native_tabs()
-        if hasattr(self, 'quick_host'):
-            old_quick = self.quick_host
-            old_quick.hide()
-            old_quick.deleteLater()
-            self._make_quick_access()
-        for ix in range(self.tabs.count()):
-            if self.tabs.tabText(ix) == selected_label:
-                self.tabs.setCurrentIndex(ix)
-                break
-        else:
-            self._select_principal()
-        for group in self._native_groups:
-            group.set_compact(self._compact)
-        self._last_menu_fingerprint = self._native_menu_fingerprint()
-        raster_now = self._diagnostic_raster_actions()
-        previous_high = getattr(self, '_raster_source_high_water', (0, 0))
-        self._raster_source_high_water = tuple(max(a, b) for a, b in zip(previous_high, raster_now))
-        self._log_raster_diagnostic('Reconstrução concluída', f'anterior={previous_high}')
-        self._rebuilding_menus = False
+        previous_block = self.tabs.blockSignals(True)
+        self.tabs.setUpdatesEnabled(False)
+        try:
+            self.tabs.setCurrentWidget(self._interface_page)
+            for page in self._native_pages:
+                ix = self.tabs.indexOf(page)
+                if ix >= 0:
+                    self.tabs.removeTab(ix)
+                page.deleteLater()
+            self._native_pages.clear()
+            self._groups = [g for g in self._groups if g not in self._native_groups]
+            self._native_groups.clear()
+            # These menus belong to deleted native pages, never to QGIS.
+            for menu in self._task_menus:
+                menu.deleteLater()
+            self._task_menus.clear()
+            self._build_native_tabs()
+            if hasattr(self, 'quick_host'):
+                old_quick = self.quick_host
+                old_quick.hide()
+                old_quick.deleteLater()
+                self._make_quick_access()
+            for ix in range(self.tabs.count()):
+                if self.tabs.tabText(ix) == selected_label:
+                    self.tabs.setCurrentIndex(ix)
+                    break
+            else:
+                self._select_principal()
+            for group in self._native_groups:
+                group.set_compact(self._compact)
+            self._last_menu_fingerprint = self._native_menu_fingerprint()
+            self._pending_menu_fingerprint = None
+            self._pending_menu_observations = 0
+            raster_now = self._diagnostic_raster_actions()
+            previous_high = getattr(self, '_raster_source_high_water', (0, 0))
+            self._raster_source_high_water = tuple(
+                max(a, b) for a, b in zip(previous_high, raster_now))
+            self._log_raster_diagnostic('Reconstrução concluída',
+                                        f'anterior={previous_high}')
+        finally:
+            self.tabs.blockSignals(previous_block)
+            self.tabs.setUpdatesEnabled(True)
+            self.tabs.update()
+            self._rebuilding_menus = False
+        # Only one post-transaction notification; no transient Interface tab.
+        self._on_tab_changed(self.tabs.currentIndex())
 
     def _make_extra_tabs(self, restore_action, focus_action, restore_panels_action):
         row = self._new_tab("Interface")

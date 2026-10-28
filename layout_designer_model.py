@@ -7,7 +7,7 @@ import re
 import unicodedata
 
 # The names are labels on our own Ribbon, not translated searches for Qt widgets.
-TAB_NAMES = ("Layout", "Inserir", "Editar", "Exibir", "Atlas", "Exportar", "Interface")
+TAB_NAMES = ("Principal", "Layout", "Inserir", "Editar", "Exibir", "Atlas", "Exportar", "Interface")
 SOURCE_TABS = {
     "layoutMenu": "Layout", "layoutToolbar": "Layout",
     "itemsMenu": "Inserir", "editMenu": "Editar", "actionsToolbar": "Editar",

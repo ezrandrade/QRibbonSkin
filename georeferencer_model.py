@@ -1,12 +1,14 @@
 """Pure action classification and labels for the native QGIS georeferencer.
 
-QRibbonSkin v0.9.18 - this file imports no Qt/QGIS modules so that routing
+QRibbonSkin v1.1.15 - this file imports no Qt/QGIS modules so that routing
 rules can be audited and tested separately from the live application.
 """
 import unicodedata
 
-TABS = ("Arquivo", "Pontos de controle", "Navegar", "Transformar", "Exibir", "Interface")
+TABS = ("Principal", "Arquivo", "Pontos de controle", "Navegar", "Transformar", "Exibir", "Interface")
 GROUP_ORDER = {
+    "Principal": ("Abrir dados", "Pontos de controle", "Navegação", "Sincronização",
+                  "Transformação", "Histograma", "Aderência"),
     "Arquivo": ("Abrir dados", "Sessão", "Arquivos"),
     "Pontos de controle": ("Editar PCT", "Arquivos PCT", "Aderência", "Pontos de controle"),
     "Navegar": ("Visualização", "Sincronização", "Navegação"),
@@ -109,3 +111,166 @@ def route_action(text, tooltip="", object_name="", source=""):
     return 'Exibir', 'Outras ferramentas'
 
 
+
+
+# Explicit, PT-BR/EN-aware priorities for the primary button in each section.
+# Fallback is the first original native QAction; no command is fabricated.
+LEADER_KEYWORDS = {
+    'Abrir dados': ('open raster', 'abrir raster', 'abrir imagem', 'open vector',
+                    'abrir vetor', 'abrir camada'),
+    'Histograma': ('full histogram', 'histograma completo',
+                   'ampliacao completa', 'ampliacao total'),
+    'Pontos de Controle': ('add gcp', 'add point', 'adicionar ponto',
+                           'adicionar pct', 'adicionar ponto de controle'),
+    'Editar PCT': ('add gcp', 'add point', 'adicionar ponto', 'adicionar pct',
+                   'adicionar ponto de controle'),
+    'Pontos de controle': ('add gcp', 'add point', 'adicionar ponto',
+                          'adicionar pct', 'adicionar ponto de controle'),
+    'Arquivos PCT': ('save gcp', 'salvar pontos', 'salvar pct',
+                     'load gcp', 'carregar pontos'),
+    'Visualização': ('zoom to layer', 'zoom para camada', 'zoom camada',
+                      'full histogram', 'histograma'),
+    # Prioritize the native Zoom-to-Layer QAction, not the generic Zoom In or
+    # Pan commands. The caller additionally resolves the concrete QAction.
+    'Navegação': ('aproximar para camada', 'aproximar para a camada',
+                  'zoom to layer', 'zoom to layer extent',
+                  'zoom para camada', 'zoom a camada', 'aproximar a camada'),
+    'Conectar': ('conectar o qgis ao georreferenciador',
+                 'conectar qgis ao georreferenciador',
+                 'link qgis to georeferencer', 'connect qgis to georeferencer'),
+    'Sincronização': ('link qgis', 'vincular qgis', 'link georeferencer',
+                      'vincular georreferenciador'),
+    'Transformação': ('start georeferenc', 'iniciar georreferenc',
+                      'executar georreferenc', 'georeference layer',
+                      'georreferenciar camada'),
+    'Executar': ('start georeferenc', 'iniciar georreferenc',
+                 'executar georreferenc', 'georeference layer'),
+    'Configurações': ('transformation settings', 'configuracoes de transformacao',
+                      'configuracao de transformacao'),
+    'Painéis': ('full histogram', 'histograma', 'gcp table', 'tabela de pct'),
+    'Aderência': ('snapping', 'aderencia'),
+}
+
+
+def preferred_action_index(group, captions):
+    """Choose a native primary action without mistaking another command.
+
+    Search all exact normalized captions before substring matches. Operates on
+    strings only, allowing regression tests without a running QGIS instance.
+    """
+    if not captions:
+        return None
+    normalized = [canonical(caption) for caption in captions]
+    choices = tuple(canonical(word) for word in LEADER_KEYWORDS.get(group, ()))
+    for word in choices:
+        for i, caption in enumerate(normalized):
+            if caption == word:
+                return i
+    for word in choices:
+        for i, caption in enumerate(normalized):
+            if word in caption:
+                return i
+    return 0
+
+
+
+def is_native_zoom_to_layer_action(caption, object_name=''):
+    """Recognize QGIS' real Zoom-to-Layer action, not arbitrary zoom tools.
+
+    Avoid selecting Zoom In or Full Extent just because it contains "zoom".
+    The action stays QGIS-owned; callers may display an independent caption.
+    """
+    label = canonical(caption)
+    obj = canonical(object_name).replace('_', '')
+    exact_captions = (
+        'aproximar para camada', 'aproximar para a camada',
+        'aproximar a camada', 'aproximar camada',
+        'zoom a camada', 'zoom para camada', 'zoom a camada ativa',
+        'zoom to layer', 'zoom to the layer', 'zoom to layer extent',
+        'zoom layer', 'zoom to source layer',
+    )
+    if label in exact_captions:
+        return True
+    if obj in ('mactionzoomtolayer', 'actionzoomtolayer',
+               'mactionzoomlayer', 'actionzoomlayer'):
+        return True
+    # Some translated versions add an ellipsis or a trailing explanation.
+    # Both semantic components (zoom + layer) must be present.
+    return (('camada' in label or 'layer' in label)
+            and ('zoom' in label or 'aproximar' in label)
+            and not any(word in label for word in ('todas as camadas',
+                                                     'all layers', 'layer properties',
+                                                     'propriedades da camada')))
+
+
+def is_native_pan_action(caption, object_name=''):
+    """Match the Georeferencer's original map-move tool (PT/EN).
+
+    Do not infer a map pan command from an unrelated 'Move GCP' / 'Mover PCT'
+    QAction. QGIS version differences are accounted for by objectName.
+    """
+    label = canonical(caption)
+    obj = canonical(object_name).replace('_', '')
+    return (label in ('movimentar', 'movimentar mapa', 'mover', 'pan',
+                      'deslocar', 'mover mapa', 'pan map', 'move map',
+                      'deslocar mapa', 'pan canvas', 'pan image')
+            or obj in ('mactionpan', 'actionpan', 'actionpanmap',
+                       'mactionpanmap'))
+
+
+def connection_display_caption(native_caption):
+    """Display-only labels for QGIS Georeferencer link commands.
+
+    The real QActions, tooltips, shortcut and menu ownership are unchanged.
+    Matching is anchored to the command text to avoid shortening unrelated
+    tools grouped under the original Exibir > Outras ferramentas section.
+    """
+    name = canonical(native_caption)
+    georef_to_qgis = (
+        'conectar georreferenciador ao qgis',
+        'conectar o georreferenciador ao qgis',
+        'link georeferencer to qgis',
+        'connect georeferencer to qgis',
+    )
+    qgis_to_georef = (
+        'conectar o qgis ao georreferenciador',
+        'conectar qgis ao georreferenciador',
+        'link qgis to georeferencer',
+        'connect qgis to georeferencer',
+    )
+    if name in georef_to_qgis:
+        return 'Georreferenciador ao QGIS'
+    if name in qgis_to_georef:
+        return 'QGIS ao Georreferenciador'
+    return None
+
+
+def georeferencer_display_caption(section, native_caption):
+    """PT-BR-only labels for known Georeferencer QActions.
+
+    Return None for unknown commands, so a new QGIS action retains its
+    original label. This is presentation only and never changes QAction.text.
+    """
+    label = canonical(native_caption)
+    if section == 'Histograma':
+        if (('histogram' in label or 'histograma' in label)
+                and any(token in label for token in ('full', 'complet', 'total', 'global'))):
+            return 'Completa Ampliação'
+        if (('histogram' in label or 'histograma' in label)
+                and any(token in label for token in ('local', 'extensao local'))):
+            return 'Extensão Local'
+    if section == 'Aderência':
+        if ('advanced digitizing' in label or 'digitalizacao avancada' in label
+                or 'digitalisation avancee' in label):
+            return 'Digitalização Avançada'
+    if section == 'Pontos de Controle':
+        if (label.startswith(('add gcp', 'add point', 'adicionar ponto',
+                              'adicionar pct', 'inserir ponto'))):
+            return 'Adicionar Ponto'
+        if (label.startswith(('delete gcp', 'delete point', 'remove gcp',
+                              'remove point', 'remover ponto', 'excluir ponto'))):
+            return 'Remover Ponto'
+        if (label.startswith(('move gcp', 'move point', 'mover ponto',
+                              'movimentar ponto'))):
+            return 'Mover Ponto'
+    return None

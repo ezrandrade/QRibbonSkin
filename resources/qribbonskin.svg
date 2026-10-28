@@ -7,14 +7,17 @@
 <linearGradient id="bottom" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1389E5"/><stop offset="1" stop-color="#00539C"/></linearGradient>
 <filter id="shadow" x="-.22" y="-.22" width="1.5" height="1.6"><feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#041322" flood-opacity=".31"/></filter>
 </defs><rect x="7" y="7" width="242" height="242" rx="47" fill="url(#bg)" stroke="#365A78" stroke-width="2"/><path d="M49 22 Q35 22 27 33" fill="none" stroke="#88BCDF" stroke-width="3" opacity=".28"/><g filter="url(#shadow)" stroke-linejoin="round">
-<path d="M46 75 Q46 49 68 49 H99 Q111 49 119 63 L128 74 H160 V145 H46Z" fill="url(#light)" stroke="#DDE8F1" stroke-width="1.8"/>
-<path d="M111 81 H158 V144 H111 Q108 144 108 137 V88 Q108 81 111 81Z" fill="url(#glass)"/>
-<path d="M129 81 H158 V144 H129Z" fill="#DCE6EF" opacity=".65"/>
-<path d="M46 116 H83 Q91 116 91 125 V138 Q91 145 84 145 H46Z" fill="#143957"/>
-<path d="M46 153 H103 V200 Q103 214 89 214 H65 Q46 214 46 195Z" fill="url(#bottom)"/>
-<path d="M69 49 H145 Q161 49 175 64 L207 97 Q221 113 207 130 L183 156 L164 134 L182 112 Q188 105 181 98 L159 75 Q154 70 141 70 H118 Q107 51 93 50Z" fill="url(#blue)" stroke="#3DD8FF" stroke-width="1"/>
-<path d="M119 50 H143 Q161 50 175 65 L207 97 Q212 104 211 111 H185 Q183 104 178 98 L157 75 Q152 70 143 70 H118Z" fill="#55D7FC" opacity=".34"/>
-<path d="M113 145 L158 141 L212 190 Q224 200 212 213 H190 Q180 213 173 204Z" fill="url(#leg)" stroke="#35D2FF" stroke-width="1"/>
-<path d="M113 145 L156 143 L181 168 H139Z" fill="#86E9FE" opacity=".28"/>
-<path d="M178 194 L211 211 Q211 213 207 214 H190 Q180 214 175 206Z" fill="#064989" opacity=".22"/>
-</g></svg>
+   <!-- ribbon UI base and layered window -->
+   <path d="M46 75 Q46 49 68 49 H99 Q111 49 119 63 L128 74 H160 V145 H46Z" fill="url(#light)" stroke="#DDE8F1" stroke-width="1.8"/>
+   <path d="M111 81 H158 V144 H111 Q108 144 108 137 V88 Q108 81 111 81Z" fill="url(#glass)"/>
+   <path d="M129 81 H158 V144 H129Z" fill="#DCE6EF" opacity=".65"/>
+   <path d="M46 116 H83 Q91 116 91 125 V138 Q91 145 84 145 H46Z" fill="#143957"/>
+   <path d="M46 153 H103 V200 Q103 214 89 214 H65 Q46 214 46 195Z" fill="url(#bottom)"/>
+   <!-- upper sweeping ribbon forms the bold R -->
+   <path d="M69 49 H145 Q161 49 175 64 L207 97 Q221 113 207 130 L183 156 L164 134 L182 112 Q188 105 181 98 L159 75 Q154 70 141 70 H118 Q107 51 93 50Z" fill="url(#blue)" stroke="#3DD8FF" stroke-width="1"/>
+   <path d="M119 50 H143 Q161 50 175 65 L207 97 Q212 104 211 111 H185 Q183 104 178 98 L157 75 Q152 70 143 70 H118Z" fill="#55D7FC" opacity=".34"/>
+   <!-- lower diagonal R ribbon -->
+   <path d="M113 145 L158 141 L212 190 Q224 200 212 213 H190 Q180 213 173 204Z" fill="url(#leg)" stroke="#35D2FF" stroke-width="1"/>
+   <path d="M113 145 L156 143 L181 168 H139Z" fill="#86E9FE" opacity=".28"/>
+   <path d="M178 194 L211 211 Q211 213 207 214 H190 Q180 214 175 206Z" fill="#064989" opacity=".22"/>
+  </g></svg>

@@ -21,6 +21,9 @@ EN = {
     'Interface':'Interface', 'Arquivo':'File', 'Inserir':'Insert',
     'QRibbonSkin — Layout':'QRibbonSkin — Layout Designer',
     'QRibbonSkin — Georreferenciador':'QRibbonSkin — Georeferencer',
+    'QRibbonSkin — Designer de Modelos':'QRibbonSkin — Model Designer',
+    'Designer de Modelos':'Model Designer', 'Editar Itens':'Edit Items',
+    'Execução':'Execution', 'Organizar':'Arrange',
     'Atlas':'Atlas', 'Exportar':'Export', 'Pontos de controle':'Control points',
     'Navegar':'Navigate', 'Transformar':'Transform', 'Layout':'Layout',
     # Main Ribbon groups
@@ -77,10 +80,72 @@ EN = {
     'Mostrar ou ocultar as barras e menus originais do Editor de Layout':'Show or hide the original Layout Designer toolbars and menus',
     'O Editor de Layout não usa uma QMainWindow Qt':'Layout Designer does not use a Qt QMainWindow',
     'Falha na Ribbon do Editor de Layout: {error}':'Layout Designer Ribbon error: {error}',
+    # Sentence-case labels and captions controlled by QRibbonSkin.
+    # Key casing is retained for compatibility with legacy routing sources.
+    'Editar Geometria': 'Edit geometry',
+    'Visibilidade da Camada': 'Layer visibility',
+    'Feições Selecionadas': 'Selected features',
+    'Mover Feições': 'Move features',
+    'Camada Vetorial': 'Vector layer',
+    'Feição(s)': 'Feature(s)',
+    'Medir Linha': 'Measure line',
+    'Novo Layout': 'New layout',
+    'Gerenciar e Instalar': 'Manage and install',
+    'Catálogo de Cenas': 'Scene catalog',
+    'Alternar Aderência': 'Toggle snapping',
+    'Alternar Edição': 'Toggle editing',
+    'Quebrar Feições': 'Split features',
+    'Vista de Mapa': 'Map view',
+    'Perfis de Usuários': 'User profiles',
+    'Atalhos de Teclado': 'Keyboard shortcuts',
+    'Simbologia de Pontos': 'Point symbology',
+    'Nova Camada': 'New layer',
+    'Layout de Impressão': 'Print layout',
+    'Selecionar/Mover Item': 'Select/move item',
+    'Exportar Imagem': 'Export image',
+    'Exportar PDF': 'Export PDF',
+    'Exportar SVG': 'Export SVG',
+    'Exportar Python': 'Export Python',
+    'Exportar Algoritmo Script': 'Export script algorithm',
+    'Conectar': 'Connect',
+    'QGIS ao Georreferenciador': 'QGIS to georeferencer',
+    'Georreferenciador ao QGIS': 'Georeferencer to QGIS',
+    # Additional presentation-only aliases used by native-action wrappers.
+    'Novo Projeto': 'New project',
+    'Abrir Projeto': 'Open project',
+    'Salvar Projeto': 'Save project',
+    'Desfazer': 'Undo',
+    'Refazer': 'Redo',
+    'Linha': 'Line',
+    'Área': 'Area',
+    'Gerenciador de Estilos': 'Style manager',
+    'Projeções': 'Projections',
+    'Modo de Pré-Visualização': 'Preview mode',
+    'Filtragem de Dados': 'Data filtering',
+    'Visualização de Mapa 3D': '3D map view',
+    'Dicas do Mapa': 'Map tips',
+    'Decorações': 'Decorations',
+    'Nova Vista 3D': 'New 3D view',
+    'Mostrar Todas as Camadas': 'Show all layers',
+    'Fonte de Dados': 'Data source',
+    'Camadas e Grupos': 'Layers and groups',
+    'Definir Projeção': 'Assign projection',
+    'Incorporar': 'Embed',
+    'Gerenciar': 'Manage',
+    'Personalizar': 'Customize',
+    'Expandir faixa Ribbon': 'Expand Ribbon',
+    'Recolher faixa Ribbon': 'Collapse Ribbon',
     # Georeferencer
     'Abrir dados':'Open data', 'Sessão':'Session', 'Arquivos':'Files',
     'Editar PCT':'Edit GCPs', 'Arquivos PCT':'GCP files',
     'Aderência':'Snapping', 'Digitalização':'Digitizing',
+    'Pontos de Controle':'Control Points', 'Histograma':'Histogram',
+    'Completa Ampliação':'Full Histogram Stretch',
+    'Extensão Local':'Local Histogram Stretch',
+    'Digitalização Avançada':'Advanced Digitizing',
+    'Adicionar Ponto':'Add Point', 'Remover Ponto':'Remove Point',
+    'Mover Ponto':'Move Point',
+    'Zoom à Camada':'Zoom to Layer',
     'Sincronização':'Synchronization', 'Executar':'Run',
     'Transformação':'Transformation', 'Controles':'Controls',
     'Histórico de edição':'Edit history',
@@ -150,3 +215,13 @@ def tr(text):
     if not isinstance(text, str) or _language == 'pt_BR':
         return text
     return EN.get(text, text)
+
+
+def ui_label(text):
+    """Translate and sentence-case only labels created by QRibbonSkin.
+
+    QGIS-owned QAction titles and menus must use their original strings, not
+    this function. Internal routing keys are intentionally left untouched.
+    """
+    from .ux_rules import sentence_label
+    return sentence_label(tr(text))
