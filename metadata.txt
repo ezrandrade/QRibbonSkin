@@ -2,11 +2,11 @@
 name=QRibbonSkin
 qgisMinimumVersion=4.0
 qgisMaximumVersion=4.99
-description=Reversible QGIS-menu-based ribbon and light styling for native QGIS panels. No geoprocessing changes.
-description[pt_BR]=Interface Ribbon baseada nos menus nativos do QGIS 4.x, com suporte ao Editor de Layout, Georreferenciador e Designer de Modelos.
-about=QRibbonSkin 1.1.30 provides a reversible ribbon interface for QGIS 4.x, including dedicated interfaces for the Layout Designer, Georeferencer and Processing Model Designer. Supports English and Brazilian Portuguese, follows the QGIS UI language, and reuses native QGIS actions and algorithms. Inspired by ArcSkin with attribution and GPL licensing.
-about[pt_BR]=QRibbonSkin 1.1.30 oferece uma interface Ribbon reversível para QGIS 4.x, incluindo o Editor de Layout, o Georreferenciador e o Designer de Modelos. Compatível com português brasileiro e inglês e com os comandos e algoritmos nativos do QGIS. Inspirado no ArcSkin, com os créditos e a licença GPL preservados.
-version=1.1.30
+description=Reversible Ribbon interface for QGIS 4.x. Enable via View > Enable QRibbonSkin interface; disable via Interface > Classic QGIS interface or Ctrl+Alt+Shift+R.
+description[pt_BR]=Interface Ribbon reversível para QGIS 4.x. Ative por Exibir > Ativar interface QRibbonSkin; desative em Interface > Interface clássica ou Ctrl+Alt+Shift+R.
+about=QRibbonSkin 1.1.44 provides a reversible Ribbon interface for QGIS 4.x and preserves native tools and algorithms. ENABLE THE RIBBON: after installing and enabling the plugin in Plugins > Manage and Install Plugins, open View > Enable QRibbonSkin interface. DISABLE THE RIBBON: use Interface > Classic QGIS interface in the Ribbon, or press Ctrl+Alt+Shift+R to toggle between interfaces. In the classic view, use View > Enable QRibbonSkin interface to enable it again. If necessary, use View > Recover QGIS toolbars. The choice is remembered for the next QGIS session. Includes adaptations for the Layout Designer, Georeferencer and Processing Model Designer. Brazilian Portuguese and English supported. ArcSkin-derived visual assets are credited in ATTRIBUTION.md.
+about[pt_BR]=O QRibbonSkin 1.1.44 oferece uma interface Ribbon reversível para QGIS 4.x, preservando as ferramentas e os algoritmos nativos. ATIVAR A RIBBON: após instalar e habilitar o complemento em Complementos > Gerenciar e Instalar Complementos, acesse Exibir > Ativar interface QRibbonSkin. DESATIVAR A RIBBON: na guia Interface, escolha Interface clássica; alternativamente, pressione Ctrl+Alt+Shift+R para alternar entre as interfaces. Na interface clássica, reative pelo menu Exibir > Ativar interface QRibbonSkin. Se necessário, use Exibir > Recuperar barras do QGIS. A preferência é preservada na próxima abertura do QGIS. Inclui interfaces para Compositor de Layout, Georreferenciador e Designer de Modelos, com suporte a português brasileiro e inglês. Créditos de recursos derivados do ArcSkin em ATTRIBUTION.md.
+version=1.1.44
 author=Esdras Andrade (with ArcSkin attribution)
 email=esdras.andrade@igdema.ufal.br
 homepage=https://github.com/ezrandrade/QRibbonSkin
@@ -18,5 +18,5 @@ server=False
 category=Plugins
 tags=ribbon,interface,skin,qt6,qgis4,gui
 icon=resources/qribbonskin.svg
-changelog=1.1.30 - Padronização das legendas PT-BR/EN, estabilidade da Ribbon e nova identidade visual R (ícones de catálogo e ativação). Sem alterações nos algoritmos nativos.
+changelog=1.1.44 - Estabilidade visual da Ribbon; Compositor de Layout e Georreferenciador com guias Principal e Interface; uso do icone nativo e legenda Caixa de Ferramentas; instrucoes de ativacao e desativacao no gerenciador. Sem alteracoes nos algoritmos do QGIS.
 ; 1.0.0 - Primeira versão estável, homologada em QGIS 4.0 no Windows 10, QGIS 4.2.2 no Windows 11 e QGIS 4.2.3 Flatpak no Ubuntu Linux. Sem alterações no código funcional.

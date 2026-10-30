@@ -5,7 +5,7 @@ rules can be audited and tested separately from the live application.
 """
 import unicodedata
 
-TABS = ("Principal", "Arquivo", "Pontos de controle", "Navegar", "Transformar", "Exibir", "Interface")
+TABS = ("Principal", "Interface")
 GROUP_ORDER = {
     "Principal": ("Abrir dados", "Pontos de controle", "Navegação", "Sincronização",
                   "Transformação", "Histograma", "Aderência"),

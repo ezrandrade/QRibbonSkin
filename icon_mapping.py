@@ -21,7 +21,7 @@ ICON_RULES = (
     (("abrir projeto", "open project"), "open_project"),
     (("salvar projeto", "save project", "guardar projeto"), "save_project"),
     (("mapa base", "basemap", "mapa de fundo"), "basemap"),
-    (("geoprocess", "processamento", "processing", "ferramentas", "toolbox"), "geoprocessing"),
+    (("geoprocess", "processamento", "processing"), "tool"),
     (("estilo", "style", "simbologia", "symbol", "paleta"), "style_manager"),
     (("etiquet", "rotulo", "label"), "labeling"),
     (("estatistic", "statistics", "grafico", "chart", "histograma"), "statistics"),
@@ -68,6 +68,18 @@ def icon_name_for_caption(caption):
 
 def fallback_icon(caption):
     from qgis.PyQt.QtGui import QIcon
+    # The Processing Toolbox must use QGIS's own themed resource, never
+    # ArcSkin's removed geoprocessing.svg. This is presentation-only and
+    # does not mutate the native QAction or theme configuration.
+    label = normalize_caption(caption)
+    if ("caixa de ferramenta" in label or "processing toolbox" in label
+            or label.strip() in ("toolbox", "tool box")):
+        from qgis.core import QgsApplication
+        icon = QgsApplication.getThemeIcon("/processingAlgorithm.svg")
+        if not icon.isNull():
+            return icon
+        # Theme unavailable: use Qt's resource path as a last QGIS fallback.
+        return QIcon(":/images/themes/default/processingAlgorithm.svg")
     name = icon_name_for_caption(caption)
     path = ICON_DIR / (name + ".svg")
     if not path.is_file():

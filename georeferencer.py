@@ -446,6 +446,8 @@ class GeoreferencerRibbon(QWidget):
         self._collect_actions()
         self._build_groups()
         self._install_snapping_proxy()
+        self._move_session_to_principal_end()
+        self._append_principal_final_divider()
         self.native_action = QAction(tr('Exibir menus e barras originais'), self)
         self.native_action.setToolTip(
             tr('Restaurar temporariamente os controles nativos; ao desmarcar, a Ribbon volta ao modo exclusivo')
@@ -555,7 +557,9 @@ class GeoreferencerRibbon(QWidget):
             return False
         tab, group = route_action(_caption(action), action.toolTip(),
                                   action.objectName(), source)
-        if tab not in self.rows:
+        # Preserve the native classification even though only two Ribbon tabs
+        # are displayed. The renderer consolidates operational groups in Principal.
+        if tab not in TABS and tab not in GROUP_ORDER:
             return False
         self._planned.setdefault((tab, group), []).append(action)
         self._seen.add(id(action))
@@ -734,9 +738,16 @@ class GeoreferencerRibbon(QWidget):
             divider.setObjectName('QRibbonGeorefDivider')
             divider.setFixedSize(1, 76)
             row.addWidget(divider, 0, Qt.AlignmentFlag.AlignVCenter)
-        row.addWidget(_CommandGroup(tr(caption), actions, self,
-                                    leader_action=leader_action,
-                                    local_titles=local_titles))
+        widget = _CommandGroup(tr(caption), actions, self,
+                               leader_action=leader_action,
+                               local_titles=local_titles)
+        row.addWidget(widget)
+        if tab == 'Principal' and caption == 'Sessão':
+            self._session_section_widget = widget
+        if tab == 'Principal':
+            represented = getattr(self, '_principal_represented', None)
+            if represented is not None:
+                represented.update(id(action) for action in actions)
 
     @staticmethod
     def _find_move_navigation_action(planned):
@@ -840,53 +851,98 @@ class GeoreferencerRibbon(QWidget):
                         if heading == 'Histograma' else None))
 
     def _build_groups(self):
+        """Place all operational groups on Principal, without losing QGIS actions.
+
+        The original action classification is retained in self._planned.
+        Previously approved primary groups keep their familiar positions,
+        while all remaining original sections follow in their original order.
+        QActions are reused, not cloned or reparented.
+        """
+        self._principal_represented = set()
         self._build_principal_groups()
-        for tab in TABS:
-            if tab == 'Principal':
-                continue
-            keys = [key for key in self._planned if key[0] == tab]
-            order = GROUP_ORDER.get(tab, ())
-            keys.sort(key=lambda key: (order.index(key[1]) if key[1] in order
-                                       else len(order), key[1]))
+
+        source_tabs = ('Arquivo', 'Pontos de controle', 'Navegar',
+                       'Transformar', 'Exibir', 'Principal')
+        deferred_session = []
+        for source_tab in source_tabs:
+            keys = [key for key in self._planned if key[0] == source_tab]
+            order = GROUP_ORDER.get(source_tab, ())
+            keys.sort(key=lambda key: (
+                order.index(key[1]) if key[1] in order else len(order),
+                key[1]))
             for _, group in keys:
-                if (tab == 'Pontos de controle' and group == 'Pontos de controle'
-                        and ('Pontos de controle', 'Editar PCT') in self._planned):
-                    # Integrate unclassified GCP tools with the renamed Editar
-                    # PCT group. Do not show two identically named sections.
+                remaining = [
+                    action for action in self._planned[(source_tab, group)]
+                    if id(action) not in self._principal_represented
+                ]
+                if not remaining:
                     continue
-                actions = list(self._planned[(tab, group)])
-                display_group = ('Pontos de Controle' if tab == 'Pontos de controle'
-                                 and group == 'Pontos de controle' else group)
-                local_titles = None
-                if tab == 'Pontos de controle' and group == 'Editar PCT':
-                    display_group = 'Pontos de Controle'
-                    seen = {id(action) for action in actions}
-                    for action in self._planned.get((tab, 'Pontos de controle'), ()):
-                        if id(action) not in seen:
-                            actions.append(action)
-                            seen.add(id(action))
-                    def _pct_title(action):
-                        return (
-                            tr(georeferencer_display_caption('Pontos de Controle', _caption(action)))
-                            if georeferencer_display_caption('Pontos de Controle', _caption(action))
-                            else None)
-                    local_titles = _pct_title
-                elif tab == 'Pontos de controle' and group == 'Aderência':
-                    def _snapping_title(action):
-                        return (
-                            tr(georeferencer_display_caption('Aderência', _caption(action)))
-                            if georeferencer_display_caption('Aderência', _caption(action))
-                            else None)
-                    local_titles = _snapping_title
+                if source_tab == 'Arquivo' and group == 'Sessão':
+                    deferred_session.extend(remaining)
+                    continue
+                caption = 'Pontos de Controle' if group == 'Editar PCT' else group
                 leader_action = None
-                if tab == 'Pontos de controle' and display_group == 'Pontos de Controle':
-                    preferred = preferred_action_index('Pontos de Controle',
-                                                       [_caption(a) for a in actions])
+                if group in ('Editar PCT', 'Pontos de controle'):
+                    preferred = preferred_action_index(
+                        'Pontos de Controle', [_caption(a) for a in remaining])
                     if preferred is not None:
-                        leader_action = actions[preferred]
-                self._append_group(tab, display_group, actions,
-                                   leader_action=leader_action,
-                                   local_titles=local_titles)
+                        leader_action = remaining[preferred]
+                self._append_group(
+                    'Principal', caption, remaining, leader_action=leader_action)
+
+        # Sessão (English: Session) is the final operational section.
+        if deferred_session:
+            self._append_group('Principal', 'Sessão', deferred_session)
+
+        # Only interface and recovery actions belong on the second tab.
+        keys = [key for key in self._planned if key[0] == 'Interface']
+        order = GROUP_ORDER.get('Interface', ())
+        keys.sort(key=lambda key: (
+            order.index(key[1]) if key[1] in order else len(order),
+            key[1]))
+        for _, group in keys:
+            self._append_group('Interface', group, self._planned[('Interface', group)])
+
+    def _move_session_to_principal_end(self):
+        """Move the actual Session widget and its preceding divider last.
+
+        Must run after additional proxy sections have been inserted.
+        Moving layout widgets (not just action routing) guarantees that no
+        section is rendered to the right of Sessão.
+        """
+        row = self.rows['Principal']
+        session = getattr(self, '_session_section_widget', None)
+        if session is None:
+            return
+        pos = row.indexOf(session)
+        if pos < 0:
+            return
+
+        preceding = None
+        if pos > 0:
+            item = row.itemAt(pos - 1)
+            candidate = item.widget() if item is not None else None
+            if candidate is not None and candidate.objectName() == 'QRibbonGeorefDivider':
+                preceding = candidate
+        row.removeWidget(session)
+        if preceding is not None:
+            row.removeWidget(preceding)
+            row.addWidget(preceding)
+        elif row.count():
+            preceding = QFrame(self)
+            preceding.setObjectName('QRibbonGeorefDivider')
+            preceding.setFixedSize(1, 76)
+            row.addWidget(preceding, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(session)
+
+    def _append_principal_final_divider(self):
+        """Close the operational Ribbon using the standard section divider."""
+        row = self.rows['Principal']
+        if row.count():
+            divider = QFrame(self)
+            divider.setObjectName('QRibbonGeorefDivider')
+            divider.setFixedSize(1, 76)
+            row.addWidget(divider, 0, Qt.AlignmentFlag.AlignVCenter)
 
 
 class GeoreferencerSession(QObject):

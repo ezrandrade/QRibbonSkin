@@ -96,6 +96,24 @@ def _principal_preferred_action(section, actions):
     # Select/Move Item is different from Move Content or Select All.
     # Zoom Full (Ver Tudo) is different from Pan Layout or Zoom to Page.
     preferred = {
+        'Adicionar elementos': (
+            ('adicionar mapa', 'add map', 'add new map'),
+            ('mActionAddMap', 'mActionAddNewMap'),
+        ),
+        'Ferramentas de edição': (
+            ('selecionar/mover item', 'selecionar mover item',
+             'select/move item', 'select move item', 'select/move items'),
+            ('mActionSelectMoveItem', 'mActionSelectMove'),
+        ),
+        'Edição': (
+            ('copiar', 'copy'),
+            ('mActionCopy', 'actionCopy'),
+        ),
+        'Imprimir e exportar': (
+            ('exportar como imagem', 'exportar imagem',
+             'export as image', 'export image'),
+            ('mActionExportAsImage', 'mActionExportImage'),
+        ),
         'Editar itens': (
             ('selecionar/mover item', 'selecionar mover item',
              'select/move item', 'select move item'),
@@ -156,6 +174,23 @@ def _principal_first_dropdown_action(section, actions):
     return None
 
 
+
+def _layout_export_short_caption(action):
+    """Display-only short label; leave native QGIS QAction text unchanged."""
+    if not _qobject_alive(action):
+        return None
+    value = normalized(str(action.text() or ''))
+    if ('export' not in value) and ('exportar' not in value):
+        return None
+    if 'svg' in value:
+        return 'Exportar SVG'
+    if 'pdf' in value:
+        return 'Exportar PDF'
+    if ('imagem' in value or 'image' in value or 'raster' in value):
+        return 'Exportar imagem'
+    return None
+
+
 class _LayoutGroup(QFrame):
     """Compact 124px style: one leading native action and optional dropdown."""
 
@@ -192,6 +227,9 @@ class _LayoutGroup(QFrame):
         lead = self._leader if self._leader in actions else actions[0]
         button = RibbonActionButton(self)
         button.setDefaultAction(lead)
+        caption = _layout_export_short_caption(lead)
+        if caption:
+            button.set_display_caption(caption)
         button.setFixedHeight(72)
         button.setIconSize(QSize(25, 25))
         button.setMinimumWidth(84)
@@ -214,7 +252,18 @@ class _LayoutGroup(QFrame):
                     if _qobject_alive(child):
                         menu.addAction(child.menuAction())
                     else:
-                        menu.addAction(action)
+                        caption = _layout_export_short_caption(action)
+                        if caption:
+                            proxy = menu.addAction(action.icon(), caption)
+                            proxy.setEnabled(action.isEnabled())
+                            proxy.setCheckable(action.isCheckable())
+                            if action.isCheckable():
+                                proxy.setChecked(action.isChecked())
+                            proxy.setToolTip(action.toolTip())
+                            proxy.triggered.connect(
+                                lambda _checked=False, native=action: native.trigger())
+                        else:
+                            menu.addAction(action)
                 if not menu.actions():
                     placeholder = menu.addAction(tr('Nenhuma ferramenta disponível'))
                     placeholder.setEnabled(False)
@@ -588,7 +637,10 @@ class LayoutRibbon(QWidget):
         if not title:
             return False
         tab, group = layout_action_placement(title, source, source_title)
-        if tab not in self._tab_rows:
+        # Keep the semantic source tab for grouping even when only the
+        # Principal and Interface presentation tabs exist.
+        if tab not in ("Principal", "Layout", "Inserir", "Editar", "Exibir",
+                       "Atlas", "Exportar", "Interface"):
             return False
         key = (tab, group)
         self._planned.setdefault(key, []).append(action)
@@ -665,53 +717,82 @@ class LayoutRibbon(QWidget):
         row.addWidget(group)
 
     def _build_principal_groups(self):
-        """Reuse existing native QActions in an ergonomic Main layout tab.
+        """Show all contextual sections in a single scrollable Principal tab.
 
-        Contextual tabs keep their complete action lists. Never duplicate or
-        change QGIS QAction ownership, text, shortcuts or processing behavior.
+        Preserve QAction identity and existing group titles; do not squeeze
+        several source sections into seven oversized dropdowns. Historical
+        classification keys remain internal and never create extra tabs.
         """
-        sections = (
-            ('Arquivo', (('Layout', 'Arquivo'), ('Layout', 'Projeto de layout'))),
-            ('Inserir elementos', (('Inserir', 'Adicionar elementos'),
-                                  ('Inserir', 'Elementos'))),
-            ('Navegação', (('Exibir', 'Navegação'), ('Exibir', 'Visualização'))),
-            ('Editar itens', (('Editar', 'Ferramentas de edição'), ('Editar', 'Edição'))),
-            ('Organizar itens', (('Editar', 'Organizar itens'),)),
-            ('Atlas', (('Atlas', 'Atlas'), ('Atlas', 'Relatório'))),
-            ('Exportar', (('Exportar', 'Impressão e exportação'),)),
+        section_order = (
+            ('Layout', 'Arquivo'),
+            ('Layout', 'Projeto de layout'),
+            ('Inserir', 'Adicionar elementos'),
+            ('Inserir', 'Elementos'),
+            ('Exibir', 'Navegação'),
+            ('Exibir', 'Visualização'),
+            ('Editar', 'Ferramentas de edição'),
+            ('Editar', 'Edição'),
+            ('Editar', 'Organizar itens'),
+            ('Editar', 'Histórico'),
+            ('Atlas', 'Atlas'),
+            ('Atlas', 'Relatório'),
+            ('Exportar', 'Impressão e exportação'),
+            ('Exportar', 'Arquivo'),
         )
-        for title, keys in sections:
-            items, seen = [], set()
-            for key in keys:
-                for action in self._planned.get(key, ()):
-                    if id(action) not in seen:
-                        items.append(action)
-                        seen.add(id(action))
-            if items:
-                leader = _principal_preferred_action(title, items)
-                group = _LayoutGroup(title, self, leader=leader)
-                first = _principal_first_dropdown_action(title, items)
-                if first is not None and first is not leader:
-                    items = [first] + [action for action in items if action is not first]
-                for action in items:
-                    group.add_action(action)
-                group.finalize()
-                self._append_group('Principal', group)
+        # The planned groups already contain unique native QActions. Preserve
+        # this property if a plugin supplies duplicate references elsewhere.
+        covered = set()
+
+        def append_section(title, actions):
+            unique = []
+            for action in actions:
+                if id(action) not in covered and _qobject_alive(action):
+                    unique.append(action)
+                    covered.add(id(action))
+            if not unique:
+                return
+            display_title = ('Imprimir e exportar'
+                             if title == 'Impressão e exportação' else title)
+            leader = _principal_preferred_action(display_title, unique)
+            section = _LayoutGroup(tr(display_title), self, leader=leader)
+            first = _principal_first_dropdown_action(title, unique)
+            if first is not None and first is not leader:
+                unique.remove(first)
+                unique.insert(0, first)
+            for action in unique:
+                section.add_action(action)
+            section.finalize()
+            self._append_group('Principal', section)
+            if title == 'Impressão e exportação':
+                # Match the existing section dividers, including at the
+                # right edge of the final printing/export section.
+                divider = QFrame(self)
+                divider.setObjectName('QRibbonLayoutDivider')
+                divider.setFixedSize(1, 76)
+                self._tab_rows['Principal'].addWidget(
+                    divider, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        for key in section_order:
+            append_section(key[1], self._planned.get(key, ()))
+
+        # Future QGIS versions and installed plugins can add source groups.
+        # Display each additional group rather than hiding its actions.
+        for (tab, group_title), actions in self._planned.items():
+            if tab == 'Interface' or (tab, group_title) in section_order:
+                continue
+            append_section(group_title, actions)
 
     def _render_planned_groups(self):
-        """Consistent group order independently of QGIS toolbar/menu order."""
+        """Use two visible tabs while keeping every historical functional section."""
         self._build_principal_groups()
-        for tab in TAB_NAMES:
-            keys = [key for key in self._planned if key[0] == tab]
-            preferred = LAYOUT_GROUP_ORDER.get(tab, ())
-            keys.sort(key=lambda key: (preferred.index(key[1]) if key[1] in preferred
-                                       else len(preferred), key[1]))
-            for _tab, group_title in keys:
-                group = _LayoutGroup(tr(group_title), self)
-                for action in self._planned[(tab, group_title)]:
-                    group.add_action(action)
-                group.finalize()
-                self._append_group(tab, group)
+        for (tab, group_title), actions in self._planned.items():
+            if tab != 'Interface':
+                continue
+            group = _LayoutGroup(tr(group_title), self)
+            for action in actions:
+                group.add_action(action)
+            group.finalize()
+            self._append_group('Interface', group)
 
     def _build_controls(self, on_exclusive):
         group = _LayoutGroup("QRibbonSkin", self)

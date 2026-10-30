@@ -1156,8 +1156,10 @@ class RibbonWidget(QWidget):
         self._menu_watch = QTimer(self)
         self._menu_watch.setInterval(3000)
         self._menu_watch.timeout.connect(self._refresh_if_menu_changed)
-        self._menu_watch.start()
-        QTimer.singleShot(1800, self._refresh_if_menu_changed)
+        # v1.1.40: disable background rebuilding. Third-party QGIS menus may
+        # mutate while the Ribbon is visible; only user-requested refresh is safe.
+        # Interface > Atualizar menus remains available and functional.
+        # self._menu_watch.start()
 
     def eventFilter(self, watched, event):  # noqa: N802
         if event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
@@ -1305,8 +1307,9 @@ class RibbonWidget(QWidget):
             if current_name == 'raster':
                 if not getattr(self, '_raster_entry_refreshed', False):
                     self._raster_entry_refreshed = True
-                    QTimer.singleShot(250, self._refresh_raster_on_entry)
-                    QTimer.singleShot(1250, self._refresh_raster_on_entry)
+                    # Avoid automatic tab rebuild while plugins lazily populate
+                    # their Raster menus. Use Interface > Atualizar menus.
+                    pass
             else:
                 self._raster_entry_refreshed = False
         if not hasattr(self, "_project_dashboard"):
@@ -2086,6 +2089,11 @@ class RibbonWidget(QWidget):
                 group.add_menu(caption, item, item.menuAction().icon())
             else:
                 group.add_action(item)
+        if heading == 'Caixa de Ferramentas' and group._lead is not None:
+            # Only the Ribbon caption changes; retain the native QGIS QAction,
+            # its tooltip, icon, checked state, signal and shortcut untouched.
+            group._lead.set_display_caption('Caixa de Ferramentas')
+            group._recalculate_group_width()
 
     def _workspace_command_entries(self, items):
         """Flatten QGIS menu entries for presentation, without cloning QActions."""
