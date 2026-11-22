@@ -91,6 +91,16 @@ Use a guia **Início** para navegar, adicionar dados, selecionar, medir e identi
 
 O código-fonte está disponível neste repositório. Problemas de interface, incompatibilidades e sugestões de melhoria podem ser registrados em [Issues](https://github.com/ezrandrade/QRibbonSkin/issues). Ao relatar um problema, informe a versão do QGIS, o sistema operacional, a versão do complemento e os passos necessários para reproduzir a ocorrência.
 
+## Empacotamento
+
+O complemento está registrado no repositório oficial do QGIS com a pasta **`qribbonskin`** (minúsculas); o pacote de cada versão precisa usar exatamente esse nome de pasta, ou o envio é recusado. A partir deste repositório:
+
+```bash
+git archive --format=zip --prefix=qribbonskin/ HEAD -o QRibbonSkin_vX.Y.Z.zip
+```
+
+A pasta `docs/` (banner e capturas de tela) fica de fora automaticamente (`.gitattributes`).
+
 ## Autoria, atribuições e licença
 
 **Autor do QRibbonSkin:** Esdras Andrade.
