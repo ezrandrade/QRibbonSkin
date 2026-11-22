@@ -1,10 +1,10 @@
-# QRibbonSkin 1.3.1
+# QRibbonSkin 1.3.2
 
 O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, e a **página inicial original do QGIS** é preservada.
 
 ## Recursos
 
-- Disposição do RustGIS: barra de acesso rápido (Novo, Abrir, Salvar, Desfazer, Refazer, Histórico) e **Buscar comandos** no topo; **Alt+Q** abre o Spotlight: um campo de busca centralizado na janela do QGIS, cujos resultados aparecem abaixo à medida que são encontrados; botão **Projeto** e as guias **Início, Dados, Estilo, Rotulagem, Editar, Analisar, Exibir, Publicar, Complementos, Configurações e Ajuda**; grupos rotulados com botões grandes (ícone 32 px) e pequenos (ícone 16 px, até três por coluna).
+- Disposição do RustGIS: barra de acesso rápido (Novo, Abrir, Salvar, Desfazer, Refazer, Histórico) e **Buscar comandos** no topo; **Alt+Q** abre o Spotlight: um campo de busca centralizado na janela do QGIS, cujos resultados aparecem abaixo à medida que são encontrados; botão **Projeto** e as guias **Início, Dados, Estilo, Rotulagem, Editar, Analisar, Exibir, Publicar, Complementos, Configurações e Ajuda**; grupos rotulados com botões grandes (ícone 24 px) e pequenos (ícone 16 px, até três por coluna; um botão pequeno que ficaria sozinho na coluna é exibido como grande).
 - Guias **Dados, Estilo e Rotulagem contextuais**: mostram ferramentas de vetor ou de raster conforme a camada selecionada no painel Camadas, como no RustGIS.
 - **Recolher/expandir** a Ribbon pelo chevron, por duplo clique numa guia ou **Ctrl+F1**; com a Ribbon recolhida, clicar numa guia a exibe temporariamente.
 - Setas de rolagem nas bordas quando a janela é estreita (também roda do mouse).

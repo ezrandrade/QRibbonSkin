@@ -1173,14 +1173,24 @@ class RibbonFrame(QWidget):
             layout.setContentsMargins(0, 1, 0, 0)
             layout.setSpacing(1)
             layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-            added = 0
+            built = []
             for sub in item["items"]:
                 for control in self._build_controls(sub, column):
                     layout.addWidget(control)
-                    added += 1
-            if not added:
+                    built.append((sub, control))
+            if not built:
                 column.deleteLater()
                 return None
+            if len(built) == 1 and built[0][0]["kind"] in ("small", "small_menu"):
+                # A small control alone in its column leaves an empty space
+                # under it: show it as a big button instead (all windows, and
+                # also when a QGIS build lacks the other commands of a column).
+                column.setParent(None)  # leave the group's tree right away
+                column.deleteLater()
+                sub = dict(built[0][0])
+                sub["kind"] = "big" if sub["kind"] == "small" else "menu"
+                sub["wrap"] = True
+                return self._build_item(sub, parent)
             return column
         if kind in ("menu", "small_menu"):
             menu = self._build_menu(item["entries"], parent)
@@ -1190,6 +1200,8 @@ class RibbonFrame(QWidget):
             caption = tr(item["label"] or "")
             if size == "small":
                 caption = caption.replace("\n", " ")
+            elif item.get("wrap"):
+                caption = self._two_lines(caption)
             button = RibbonButton(self._m, size, caption, theme_icon(item["icon"]), None, parent)
             button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
             button.setMenu(menu)
@@ -1204,6 +1216,9 @@ class RibbonFrame(QWidget):
         caption = tr(label) if label else clean_caption(action.text())
         if size == "small":
             caption = caption.replace("\n", " ")
+        elif item.get("wrap"):
+            # Promoted from a small control: translated first, then wrapped.
+            caption = self._two_lines(caption.replace("\n", " "))
         icon = item.get("icon") or self._icon_for(item["name"])
         button = RibbonButton(self._m, size, caption, theme_icon(icon), action, parent)
         if kind == "split":
