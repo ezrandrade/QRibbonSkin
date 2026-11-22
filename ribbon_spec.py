@@ -142,7 +142,41 @@ TABS = (
 # Tabs whose groups depend on the layer selected in the Layers panel.
 LAYER_DEPENDENT_TABS = ("data", "style", "labeling")
 
+# Groups shown *in the Ribbon* by the "Projeto" button (RustGIS opens its
+# project backstage there). Only native QGIS project commands and menus; the
+# QGIS welcome page in the map area is never replaced.
+PROJECT_TAB = "project"
+
 GROUPS = {
+    PROJECT_TAB: (
+        group("Projeto",
+              big("mActionNewProject", "Novo"),
+              split("mActionOpenProject", ("mActionOpenProject", "-",
+                                           "menu:mRecentProjectsMenu"), "Abrir"),
+              big("mActionSaveProject", "Salvar"),
+              big("mActionSaveProjectAs", "Salvar\ncomo")),
+        group("Recentes e modelos",
+              menu("Projetos\nrecentes", "/mActionFileOpen.svg",
+                   ("menu:mRecentProjectsMenu",)),
+              menu("Novo a partir\nde modelo", "/mActionFileNewFromTemplate.svg",
+                   ("menu:mProjectFromTemplateMenu",))),
+        group("Armazenamento",
+              menu("Abrir de", "/mIconFolder24.svg", ("menu:mProjectFromStorageMenu",)),
+              menu("Salvar em", "/mActionFileSaveAs.svg", ("menu:mProjectToStorageMenu",))),
+        group("Layouts",
+              big("mActionNewPrintLayout", "Novo\nlayout"),
+              big("mActionShowLayoutManager", "Gerenciador\nde layouts"),
+              menu("Layouts", "/mActionComposerManager.svg", ("menu:mLayoutsMenu",))),
+        group("Importar e exportar",
+              menu("Importar/\nexportar", "/mActionSharing.svg", ("menu:menuImport_Export",)),
+              col(small("mActionDxfExport", "Exportar DXF", "/mActionSharingExport.svg"),
+                  small("mActionDwgImport", "Importar DWG/DXF", "/mActionSharingImport.svg"))),
+        group("Projeto atual",
+              big("mActionProjectProperties", "Propriedades"),
+              col(small("mActionRevertProject", "Reverter", "/mActionReload.svg"),
+                  small("mActionCloseProject", "Fechar", "/mIconClose.svg"),
+                  small("mActionExit", "Sair do QGIS"))),
+    ),
     "home": (
         group("Projeto",
               big("mActionNewMapCanvas", "Nova vista\nde mapa"),
@@ -355,9 +389,9 @@ GROUPS = {
                   small("mActionEditFeaturesInPlace", "Editar no local"),
                   small("mActionQueryHistory", "Histórico SQL"))),
         group("Ferramentas",
-              menu("Vetor", "/mIconVector.svg", ("menu:mVectorMenu",)),
-              menu("Raster", "/mIconRaster.svg", ("menu:mRasterMenu",)),
-              menu("Malha", "/mIconMeshLayer.svg", ("menu:mMeshMenu",)),
+              menu("Vetor", "/mActionAddOgrLayer.svg", ("menu:mVectorMenu",)),
+              menu("Raster", "/mActionAddRasterLayer.svg", ("menu:mRasterMenu",)),
+              menu("Malha", "/mActionAddMeshLayer.svg", ("menu:mMeshMenu",)),
               menu("Banco de\ndados", "/propertyicons/database.svg",
                    ("menu:mDatabaseMenu",))),
         group("Raster",
@@ -390,7 +424,7 @@ GROUPS = {
                    ("menu:mMenuPreviewMode",))),
         group("Janelas",
               big("ShowLayersPanel", "Camadas", "/mActionLayers.svg"),
-              big("ShowBrowserPanel", "Navegador", "/mIconBrowserRelations.svg"),
+              big("ShowBrowserPanel", "Navegador", "/mIconFolder24.svg"),
               big("dock:ProcessingToolbox", "Painel de\nferramentas",
                   "/processingAlgorithm.svg"),
               col(small("ShowLayerStylingPanel", "Simbologia",
@@ -435,7 +469,7 @@ GROUPS = {
                         "/mActionFileSave.svg"))),
         group("Salvar como",
               big("mActionSaveProjectAs", "Projeto"),
-              menu("Armazenamento", "/mIconFolderProject.svg",
+              menu("Armazenamento", "/mIconFolder24.svg",
                    ("menu:mProjectToStorageMenu",)),
               col(small("mActionProjectProperties", "Propriedades do projeto"))),
     ),
@@ -445,8 +479,8 @@ GROUPS = {
               col(small("mActionShowPythonDialog", "Console Python"))),
         group("Menus de complementos",
               menu("Complementos", "/propertyicons/plugins.svg", ("menu:mPluginMenu",)),
-              menu("Vetor", "/mIconVector.svg", ("menu:mVectorMenu",)),
-              menu("Raster", "/mIconRaster.svg", ("menu:mRasterMenu",)),
+              menu("Vetor", "/mActionAddOgrLayer.svg", ("menu:mVectorMenu",)),
+              menu("Raster", "/mActionAddRasterLayer.svg", ("menu:mRasterMenu",)),
               menu("Banco de\ndados", "/propertyicons/database.svg",
                    ("menu:mDatabaseMenu",)),
               menu("Web", "/mIconWms.svg", ("menu:mWebMenu",)),
@@ -480,7 +514,7 @@ GROUPS = {
     "help": (
         group("Ajuda",
               big("mActionHelpContents", "Conteúdo\nda ajuda"),
-              big("mActionAbout", "Sobre"),
+              big("mActionAbout", "Sobre", "/mIconInfo.svg"),
               big("mActionCheckQgisVersion", "Verificar\nversão"),
               big(COMMAND_SEARCH)),
         group("Aprender",

@@ -5,28 +5,34 @@ Layout (top to bottom), as in RustGIS:
 1. Header row      – Quick Access Toolbar (left) and command search (right).
 2. Tab strip       – a "Projeto" button, the tabs and a collapse chevron.
 3. Ribbon          – the active tab's labelled groups; arrow buttons scroll it
-                     when the window is too narrow.
+                     when the window is too narrow. The "Projeto" button shows
+                     the native project commands here, in the Ribbon.
 
 Every control reuses a QGIS-owned QAction or QMenu (see ribbon_spec.py), so
 icons, translations, enabled/checked state and shortcuts stay native. Colours
 come from the running QPalette, so the Ribbon follows the user's QGIS theme.
 
+Sizes follow QGIS, not pixels: large icons are drawn at 24 px (the size the
+QGIS theme icons are designed for), small ones at 16 px, bitmap icons are
+never enlarged past their own size, and every height is derived from the
+font metrics, so captions are never clipped at larger fonts or DPI scaling.
+
 Performance rules: no timers, no application-wide event filter, no menu
 rescans. Tab pages are built lazily on first view; the three layer-dependent
 tabs (Data, Style, Labeling) are rebuilt only when the kind of the selected
-layer changes, and only when they are visible. The Project button opens the
-native Project menu: the QGIS welcome page and project workflow are untouched.
+layer changes. The command list for the Spotlight is read only when it opens.
 """
 
+import unicodedata
 from pathlib import Path
 
-from qgis.PyQt.QtCore import Qt, QSize, QRect, QPointF, QTimer, QStringListModel
-from qgis.PyQt.QtGui import (QAction, QColor, QFontMetrics, QIcon, QKeySequence, QPainter,
-                             QPainterPath, QPalette, QPen, QPixmap, QShortcut)
+from qgis.PyQt.QtCore import Qt, QSize, QRect, QPointF, QTimer
+from qgis.PyQt.QtGui import (QAction, QColor, QFont, QFontMetrics, QIcon, QKeySequence,
+                             QPainter, QPainterPath, QPalette, QPen, QPixmap, QShortcut)
 from qgis.PyQt.QtWidgets import (
-    QCompleter, QDockWidget, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu,
-    QScrollArea, QSizePolicy, QStackedWidget, QStyle, QStyleOptionToolButton, QStylePainter,
-    QTabBar, QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QDockWidget, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMenu, QScrollArea, QSizePolicy, QStackedWidget, QStyle, QStyleOptionToolButton,
+    QStylePainter, QTabBar, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .i18n import tr
@@ -34,19 +40,12 @@ from . import ribbon_spec as spec
 
 ICON_DIR = Path(__file__).resolve().parent / "resources" / "icons" / "qgis_style"
 
-# RustGIS metrics (crates/ui-egui/src/widgets.rs, ribbon.rs, chrome.rs).
-HEADER_H = 30
-TAB_STRIP_H = 30
-CONTENT_H = 72
-LABEL_H = 18
-RIBBON_H = CONTENT_H + LABEL_H + 10
-BIG_H = CONTENT_H - 2
-BIG_ICON = 32
-SMALL_H = 22
-SMALL_ICON = 16
+BIG_ICON = 24     # QGIS theme icons are drawn on a 24 px grid
+SMALL_ICON = 16   # QGIS "small icons" toolbar size
 SCROLL_BUTTON_W = 18
 COLLAPSE_SHORTCUT = "Ctrl+F1"
 SEARCH_SHORTCUT = "Alt+Q"
+SPOTLIGHT_LIMIT = 40
 
 # QGIS's own toolbars (qgisapp.ui); anything else belongs to a plugin.
 CORE_TOOLBARS = frozenset((
@@ -66,6 +65,12 @@ def clean_caption(text):
     return text.replace("…", "").replace("...", "").strip()
 
 
+def fold(text):
+    """Case- and accent-insensitive form used for searching."""
+    text = unicodedata.normalize("NFKD", str(text or "").casefold())
+    return "".join(ch for ch in text if not unicodedata.combining(ch))
+
+
 def theme_icon(path):
     """A QGIS theme icon ("/name.svg") or a QRibbonSkin one ("qrs:name.svg")."""
     if not path:
@@ -82,14 +87,50 @@ def theme_icon(path):
     return QIcon(":/images/themes/default" + path)
 
 
+def icon_rect(icon, size, centre_x, top):
+    """Where to paint ``icon``: ``size`` px, but never larger than a bitmap
+    icon's own pixmaps (QIcon.actualSize never scales up), so PNG icons are
+    not pixelated. Scalable SVG icons get the full ``size``."""
+    actual = icon.actualSize(QSize(size, size))
+    w = min(size, actual.width()) if actual.width() > 0 else size
+    h = min(size, actual.height()) if actual.height() > 0 else size
+    return QRect(int(centre_x - w / 2), int(top + (size - h) / 2), w, h)
+
+
 def _mix(top, bottom, ratio):
     return QColor(round(top.red() * ratio + bottom.red() * (1 - ratio)),
                   round(top.green() * ratio + bottom.green() * (1 - ratio)),
                   round(top.blue() * ratio + bottom.blue() * (1 - ratio)))
 
 
-def stylesheet():
-    """Style sheet scoped to QRibbonSkin objects; colours are palette roles."""
+class Metrics:
+    """All Ribbon sizes, derived from the QGIS interface font."""
+
+    def __init__(self, font):
+        fm = QFontMetrics(font)
+        self.font = QFont(font)
+        self.line = fm.lineSpacing()
+        self.label_font = QFont(font)
+        if font.pointSizeF() > 0:
+            self.label_font.setPointSizeF(max(7.0, font.pointSizeF() - 1.0))
+        lfm = QFontMetrics(self.label_font)
+        # Big button: margin, 24 px icon, gap, two caption lines, margin.
+        self.big_top = 5
+        self.big_text_top = self.big_top + BIG_ICON + 4
+        self.big_h = max(64, self.big_text_top + 2 * self.line + 4)
+        self.small_h = max(22, fm.height() + 6)
+        self.content_h = max(self.big_h + 2, 3 * self.small_h + 4)
+        self.label_h = lfm.height() + 4
+        self.ribbon_h = self.content_h + self.label_h + 8
+        self.tab_h = max(30, fm.height() + 14)
+        self.header_h = max(30, fm.height() + 12)
+
+
+def stylesheet(palette):
+    """Style sheet scoped to QRibbonSkin objects; every colour is native."""
+    highlight = palette.color(QPalette.ColorRole.Highlight)
+    pressed = highlight.darker(125).name()
+    hover = highlight.darker(112).name()
     return """
 QWidget#QRibbonSkinWidget { background: palette(window); }
 QWidget#QRibbonSkinHeader { background: palette(window); }
@@ -110,28 +151,27 @@ QTabBar#QRibbonSkinTabs::tab:selected {
     background: palette(base); border-color: palette(mid);
     border-bottom: 2px solid palette(highlight); font-weight: 600;
 }
+QTabBar#QRibbonSkinTabs[projectActive="true"]::tab:selected {
+    background: transparent; border-color: transparent; font-weight: normal;
+}
 QToolButton#QRibbonSkinProjectButton {
     background: palette(highlight); color: palette(highlighted-text);
     border: 0; border-radius: 4px; padding: 2px 12px; font-weight: 600;
 }
-QToolButton#QRibbonSkinProjectButton:hover { background: palette(dark); }
-QToolButton#QRibbonSkinProjectButton::menu-indicator { image: none; width: 0; }
+QToolButton#QRibbonSkinProjectButton:hover { background: %(hover)s; }
+QToolButton#QRibbonSkinProjectButton:checked,
+QToolButton#QRibbonSkinProjectButton:pressed { background: %(pressed)s; }
 QLineEdit#QRibbonSkinSearch {
     background: palette(base); color: palette(text);
     border: 1px solid palette(mid); border-radius: 11px; padding: 1px 10px;
 }
-QLineEdit#QRibbonSkinSearch:focus { border: 1px solid palette(highlight); }
-QLabel#QRibbonSkinGroupLabel { background: transparent; }
-QLabel#QRibbonSkinHint { background: transparent; }
-"""
+QLineEdit#QRibbonSkinSearch:hover { border: 1px solid palette(highlight); }
+QLabel#QRibbonSkinGroupLabel, QLabel#QRibbonSkinHint { background: transparent; }
+""" % {"hover": hover, "pressed": pressed}
 
 
 class ActionIndex:
-    """objectName → QAction/QMenu of the QGIS main window, read once.
-
-    One ``findChildren`` pass replaces hundreds of recursive ``findChild``
-    calls. Objects created later by QGIS (rare) are looked up on demand.
-    """
+    """objectName → QAction/QMenu of the QGIS main window, read once."""
 
     def __init__(self, window):
         self.window = window
@@ -172,13 +212,14 @@ class ActionIndex:
 class RibbonButton(QToolButton):
     """A big (icon over caption) or small (icon left of caption) control.
 
-    The QAction (when there is one) drives trigger, enabled, checked and
-    tooltip natively through ``setDefaultAction``. The frame is drawn by the
-    native QStyle (as QGIS toolbars are); only icon/caption placement is ours.
+    The QAction drives trigger, enabled, checked and tooltip natively through
+    ``setDefaultAction``. The frame is drawn by the native QStyle (as QGIS
+    toolbars are); only icon/caption placement is ours.
     """
 
-    def __init__(self, size, caption, fallback_icon=None, action=None, parent=None):
+    def __init__(self, metrics, size, caption, fallback_icon=None, action=None, parent=None):
         super().__init__(parent)
+        self._m = metrics
         self._size = size
         self._caption = caption
         self._fallback = fallback_icon or QIcon()
@@ -193,10 +234,6 @@ class RibbonButton(QToolButton):
                 tip = "%s (%s)" % (tip, shortcut)
             self.setToolTip(tip)
         self._fit()
-
-    def set_tooltip_text(self, text):
-        if text:
-            self.setToolTip(text)
 
     def actionEvent(self, event):  # noqa: N802
         # QToolButton copies the QAction's tooltip on every change; keep ours.
@@ -214,19 +251,22 @@ class RibbonButton(QToolButton):
         return self.menu() is not None and \
             self.popupMode() == QToolButton.ToolButtonPopupMode.InstantPopup
 
+    def _split(self):
+        return self.popupMode() == QToolButton.ToolButtonPopupMode.MenuButtonPopup
+
     def _fit(self):
         metrics = QFontMetrics(self.font())
         caret = 9 if self._has_menu_arrow() else 0
         if self._size == "big":
             lines = self._caption.split("\n") if self._caption else [""]
             width = max(metrics.horizontalAdvance(line) for line in lines) + caret
-            if self.popupMode() == QToolButton.ToolButtonPopupMode.MenuButtonPopup:
+            if self._split():
                 width += 12
-            self.setFixedSize(max(50, width + 14), BIG_H)
+            self.setFixedSize(max(48, width + 14), self._m.big_h)
         else:
             text = metrics.horizontalAdvance(self._caption) + 8 if self._caption else 0
             extra = 12 if self.menu() is not None else 0
-            self.setFixedSize(SMALL_ICON + 8 + text + extra, SMALL_H)
+            self.setFixedSize(SMALL_ICON + 8 + text + extra, self._m.small_h)
 
     def setMenu(self, menu):  # noqa: N802
         super().setMenu(menu)
@@ -247,6 +287,7 @@ class RibbonButton(QToolButton):
         painter = QStylePainter(self)
         painter.drawComplexControl(QStyle.ComplexControl.CC_ToolButton, opt)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         enabled = self.isEnabled()
         mode = QIcon.Mode.Normal if enabled else QIcon.Mode.Disabled
         state = QIcon.State.On if self.isChecked() else QIcon.State.Off
@@ -254,30 +295,30 @@ class RibbonButton(QToolButton):
         color = self.palette().color(group, QPalette.ColorRole.ButtonText)
         painter.setPen(color)
         metrics = QFontMetrics(self.font())
-        arrow_room = 12 if self.popupMode() == QToolButton.ToolButtonPopupMode.MenuButtonPopup else 0
-        body = QRect(0, 0, self.width() - arrow_room, self.height())
+        body_w = self.width() - (12 if self._split() else 0)
         icon = self._icon()
         if self._size == "big":
-            icon_rect = QRect(body.center().x() - BIG_ICON // 2 + 1, 5, BIG_ICON, BIG_ICON)
             if not icon.isNull():
-                icon.paint(painter, icon_rect, Qt.AlignmentFlag.AlignCenter, mode, state)
+                rect = icon_rect(icon, BIG_ICON, body_w / 2, self._m.big_top)
+                icon.paint(painter, rect, Qt.AlignmentFlag.AlignCenter, mode, state)
             lines = self._caption.split("\n") if self._caption else []
-            y = 41
+            y = self._m.big_text_top
             for index, line in enumerate(lines):
                 last = index == len(lines) - 1
                 width = metrics.horizontalAdvance(line)
                 caret = 9 if (last and self._has_menu_arrow()) else 0
-                x = body.center().x() - (width + caret) // 2 + 1
+                x = int(body_w / 2 - (width + caret) / 2)
                 painter.drawText(QRect(x, y, width + 2, metrics.height()),
                                  Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, line)
                 if caret:
-                    self._caret(painter, QPointF(x + width + 5.5, y + metrics.ascent() / 2 + 2), color)
-                y += metrics.lineSpacing() - 1
+                    self._caret(painter, QPointF(x + width + 5.5, y + metrics.ascent() * 0.6), color)
+                y += self._m.line
         else:
-            icon_rect = QRect(4, (self.height() - SMALL_ICON) // 2, SMALL_ICON, SMALL_ICON)
             if not icon.isNull():
-                icon.paint(painter, icon_rect, Qt.AlignmentFlag.AlignCenter, mode, state)
-            text_rect = QRect(SMALL_ICON + 8, 0, body.width() - SMALL_ICON - 8, self.height())
+                rect = icon_rect(icon, SMALL_ICON, 4 + SMALL_ICON / 2,
+                                 (self.height() - SMALL_ICON) / 2)
+                icon.paint(painter, rect, Qt.AlignmentFlag.AlignCenter, mode, state)
+            text_rect = QRect(SMALL_ICON + 8, 0, body_w - SMALL_ICON - 8, self.height())
             painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                              self._caption)
             if self._has_menu_arrow():
@@ -297,7 +338,7 @@ class RibbonButton(QToolButton):
 class RibbonGroup(QWidget):
     """Controls over a centred caption, closed by a vertical divider."""
 
-    def __init__(self, title, parent=None):
+    def __init__(self, metrics, title, parent=None):
         super().__init__(parent)
         self.setObjectName("QRibbonSkinGroup")
         outer = QVBoxLayout(self)
@@ -308,20 +349,18 @@ class RibbonGroup(QWidget):
         self.row.setSpacing(2)
         self.row.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         holder = QWidget(self)
-        holder.setFixedHeight(CONTENT_H)
+        holder.setFixedHeight(metrics.content_h)
         holder.setLayout(self.row)
         outer.addWidget(holder)
         self.label = QLabel(title, self)
         self.label.setObjectName("QRibbonSkinGroupLabel")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setFixedHeight(LABEL_H)
-        font = self.label.font()
-        font.setPointSizeF(max(7.0, font.pointSizeF() - 1.0))
-        self.label.setFont(font)
+        self.label.setFixedHeight(metrics.label_h)
+        self.label.setFont(metrics.label_font)
         pal = self.label.palette()
-        window = pal.color(QPalette.ColorRole.Window)
-        text = pal.color(QPalette.ColorRole.WindowText)
-        pal.setColor(QPalette.ColorRole.WindowText, _mix(text, window, 0.62))
+        pal.setColor(QPalette.ColorRole.WindowText,
+                     _mix(pal.color(QPalette.ColorRole.WindowText),
+                          pal.color(QPalette.ColorRole.Window), 0.62))
         self.label.setPalette(pal)
         outer.addWidget(self.label)
         self.count = 0
@@ -335,7 +374,7 @@ class RibbonGroup(QWidget):
         painter = QPainter(self)
         pal = self.palette()
         painter.setPen(QPen(_mix(pal.color(QPalette.ColorRole.Mid),
-                                 pal.color(QPalette.ColorRole.Base), 0.6), 1))
+                                 pal.color(QPalette.ColorRole.Base), 0.5), 1))
         x = self.width() - 4
         painter.drawLine(x, 6, x, self.height() - 4)
         painter.end()
@@ -423,72 +462,232 @@ class RibbonPage(QWidget):
         QTimer.singleShot(0, self._update_arrows)
 
 
-class CommandSearch(QLineEdit):
-    """RustGIS "Command Search": find any native QGIS/plugin command by name.
+def collect_commands(window):
+    """{display key: (QAction, caption, path)} from native menus and the
+    toolbars of plugins. Read only when the Spotlight opens."""
+    commands = {}
 
-    The command list is gathered from the native menus and toolbars only when
-    the box gains focus (never in the background); a QCompleter pops up the
-    matches and running one triggers the native QAction.
+    def visit(actions, path):
+        for action in actions:
+            if action.isSeparator() or not action.isVisible():
+                continue
+            caption = clean_caption(action.text())
+            sub = action.menu()
+            if sub is not None:
+                # Toolbar toggles make no sense while the Ribbon replaces them.
+                if sub.objectName() != "mToolbarMenu":
+                    visit(sub.actions(), path + [caption] if caption else path)
+            elif caption:
+                where = " › ".join(path)
+                key = caption + ("\u0001" + where if where else "")
+                commands.setdefault(key, (action, caption, where))
+
+    menu_bar = window.menuBar()
+    if menu_bar is not None:
+        visit(menu_bar.actions(), [])
+    for bar in window.findChildren(QToolBar):
+        if bar.objectName() not in CORE_TOOLBARS:
+            visit(bar.actions(), [bar.windowTitle()])
+    return commands
+
+
+def rank_commands(commands, query, limit=SPOTLIGHT_LIMIT):
+    """Commands whose caption/path contain every word of ``query``; caption
+    prefix matches first, then word-start matches, then the rest."""
+    words = fold(query).split()
+    if not words:
+        return []
+    scored = []
+    for key, (action, caption, where) in commands.items():
+        cap = fold(caption)
+        hay = cap + " " + fold(where)
+        if not all(w in hay for w in words):
+            continue
+        if cap.startswith(words[0]):
+            score = 0
+        elif any(part.startswith(words[0]) for part in cap.split()):
+            score = 1
+        elif words[0] in cap:
+            score = 2
+        else:
+            score = 3
+        scored.append((score, len(caption), cap, key))
+    scored.sort()
+    return [key for *_rest, key in scored[:limit]]
+
+
+class Spotlight(QWidget):
+    """Alt+Q command palette centred over QGIS, in the style of macOS Spotlight.
+
+    A frameless popup (closes on Esc or a click outside) with a large query
+    field and the matching native commands (icon, name and menu path). Enter
+    runs the selected QAction; nothing is executed by the plugin itself.
     """
 
-    def __init__(self, window, parent=None):
-        super().__init__(parent)
+    def __init__(self, window):
+        super().__init__(window, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         self._window = window
         self._commands = {}
+        self._recent = []
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setObjectName("QRibbonSkinSpotlightWindow")
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        panel = QFrame(self)
+        panel.setObjectName("QRibbonSkinSpotlight")
+        panel.setStyleSheet(
+            "QFrame#QRibbonSkinSpotlight { background: palette(base); "
+            "border: 1px solid palette(mid); border-radius: 12px; }"
+            "QLineEdit#QRibbonSkinSpotlightQuery { background: transparent; border: 0; "
+            "color: palette(text); padding: 4px 2px; }"
+            "QListWidget#QRibbonSkinSpotlightList { background: transparent; border: 0; "
+            "outline: 0; }"
+            "QListWidget#QRibbonSkinSpotlightList::item { padding: 4px 6px; border-radius: 6px; }"
+            "QListWidget#QRibbonSkinSpotlightList::item:selected { "
+            "background: palette(highlight); color: palette(highlighted-text); }"
+            "QLabel { background: transparent; }")
+        outer.addWidget(panel)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(6)
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        icon = QLabel(panel)
+        icon.setPixmap(theme_icon("/search.svg").pixmap(QSize(20, 20)))
+        top.addWidget(icon)
+        self.query = QLineEdit(panel)
+        self.query.setObjectName("QRibbonSkinSpotlightQuery")
+        self.query.setPlaceholderText(tr("Digite para buscar ferramentas"))
+        font = self.query.font()
+        font.setPointSizeF(font.pointSizeF() + 4 if font.pointSizeF() > 0 else 14)
+        self.query.setFont(font)
+        top.addWidget(self.query, 1)
+        layout.addLayout(top)
+        self.results = QListWidget(panel)
+        self.results.setObjectName("QRibbonSkinSpotlightList")
+        self.results.setIconSize(QSize(BIG_ICON, BIG_ICON))
+        self.results.setUniformItemSizes(True)
+        self.results.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Spotlight style: no scroll bar; wheel and arrow keys still scroll.
+        self.results.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        layout.addWidget(self.results, 1)
+        self.footer = QLabel(tr("Enter: executar  ·  Esc: fechar"), panel)
+        pal = self.footer.palette()
+        pal.setColor(QPalette.ColorRole.WindowText,
+                     _mix(pal.color(QPalette.ColorRole.WindowText),
+                          pal.color(QPalette.ColorRole.Base), 0.55))
+        self.footer.setPalette(pal)
+        layout.addWidget(self.footer)
+        self.query.textChanged.connect(self._populate)
+        self.query.installEventFilter(self)
+        self.results.itemActivated.connect(self._run_item)
+        self.results.itemClicked.connect(self._run_item)
+
+    def open(self, text=""):
+        self._commands = collect_commands(self._window)
+        win = self._window.frameGeometry()
+        width = min(640, max(420, int(win.width() * 0.46)))
+        row = QFontMetrics(self.results.font()).height() + 10
+        height = 70 + row * 9 + QFontMetrics(self.footer.font()).height()
+        self.setFixedSize(width, height)
+        self.move(win.x() + (win.width() - width) // 2, win.y() + int(win.height() * 0.16))
+        self.query.blockSignals(True)
+        self.query.setText(text)
+        self.query.blockSignals(False)
+        self._populate(text)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.query.setFocus(Qt.FocusReason.PopupFocusReason)
+        self.query.end(False)
+
+    def _populate(self, text):
+        self.results.clear()
+        keys = rank_commands(self._commands, text) if text.strip() else \
+            [k for k in self._recent if k in self._commands]
+        for key in keys:
+            action, caption, where = self._commands[key]
+            label = caption if not where else "%s\n%s" % (caption, where)
+            item = QListWidgetItem(action.icon(), label.split("\n")[0])
+            if where:
+                item.setToolTip(where)
+                item.setText("%s   —   %s" % (caption, where))
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            if not action.isEnabled():
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            self.results.addItem(item)
+        if self.results.count():
+            self.results.setCurrentRow(next(
+                (i for i in range(self.results.count())
+                 if self.results.item(i).flags() & Qt.ItemFlag.ItemIsEnabled), 0))
+        if text.strip() and not keys:
+            self.footer.setText(tr("Nenhum comando encontrado"))
+        elif not text.strip():
+            self.footer.setText(tr("Digite para buscar ferramentas") + "  ·  " +
+                                tr("Enter: executar  ·  Esc: fechar"))
+        else:
+            self.footer.setText(tr("Enter: executar  ·  Esc: fechar"))
+
+    def eventFilter(self, watched, event):  # noqa: N802
+        if watched is self.query and event.type() == event.Type.KeyPress:
+            key = event.key()
+            if key == Qt.Key.Key_Escape:
+                self.close()
+                return True
+            if key in (Qt.Key.Key_Down, Qt.Key.Key_Up, Qt.Key.Key_PageDown, Qt.Key.Key_PageUp):
+                step = {Qt.Key.Key_Down: 1, Qt.Key.Key_Up: -1,
+                        Qt.Key.Key_PageDown: 8, Qt.Key.Key_PageUp: -8}[key]
+                count = self.results.count()
+                if count:
+                    row = max(0, min(count - 1, self.results.currentRow() + step))
+                    self.results.setCurrentRow(row)
+                return True
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self._run_item(self.results.currentItem())
+                return True
+        return super().eventFilter(watched, event)
+
+    def _run_item(self, item):
+        if item is None or not (item.flags() & Qt.ItemFlag.ItemIsEnabled):
+            return
+        key = item.data(Qt.ItemDataRole.UserRole)
+        entry = self._commands.get(key)
+        self.close()
+        if entry is None:
+            return
+        if key in self._recent:
+            self._recent.remove(key)
+        self._recent.insert(0, key)
+        del self._recent[12:]
+        # Let the popup close before a modal QGIS dialog opens.
+        QTimer.singleShot(0, entry[0].trigger)
+
+
+class SearchBox(QLineEdit):
+    """RustGIS "Command Search" box: a click or typing opens the Spotlight."""
+
+    def __init__(self, open_spotlight, parent=None):
+        super().__init__(parent)
+        self._open = open_spotlight
         self.setObjectName("QRibbonSkinSearch")
         self.setPlaceholderText(tr("Buscar comandos") + "   " + SEARCH_SHORTCUT)
-        self.setClearButtonEnabled(True)
-        self.setFixedHeight(24)
-        self.setMinimumWidth(150)
-        self.setMaximumWidth(260)
+        fm = QFontMetrics(self.font())
+        self.setFixedHeight(max(24, fm.height() + 8))
+        hint = fm.horizontalAdvance(self.placeholderText()) + 56
+        self.setMinimumWidth(max(150, min(hint, 300)))
+        self.setMaximumWidth(max(260, min(hint, 300)))
+        self.setToolTip(tr("Buscar e executar qualquer comando do QGIS (Alt+Q)"))
         self.addAction(theme_icon("/search.svg"), QLineEdit.ActionPosition.LeadingPosition)
-        self._model = QStringListModel(self)
-        completer = QCompleter(self._model, self)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
-        completer.setMaxVisibleItems(14)
-        completer.activated[str].connect(self._run)
-        self.setCompleter(completer)
-        self.returnPressed.connect(lambda: self._run(self.text()))
+        self.textEdited.connect(self._hand_over)
 
-    def focusInEvent(self, event):  # noqa: N802
-        self._collect()
-        super().focusInEvent(event)
+    def mousePressEvent(self, event):  # noqa: N802
+        event.accept()
+        self._hand_over(self.text())
 
-    def _collect(self):
-        commands = {}
-
-        def visit(actions, path):
-            for action in actions:
-                if action.isSeparator() or not action.isVisible():
-                    continue
-                caption = clean_caption(action.text())
-                sub = action.menu()
-                if sub is not None:
-                    visit(sub.actions(), path + [caption] if caption else path)
-                elif caption:
-                    key = caption if not path else "%s  —  %s" % (caption, " › ".join(path))
-                    commands.setdefault(key, action)
-
-        menu_bar = self._window.menuBar()
-        if menu_bar is not None:
-            visit(menu_bar.actions(), [])
-        for bar in self._window.findChildren(QToolBar):
-            if bar.objectName() not in CORE_TOOLBARS:
-                visit(bar.actions(), [bar.windowTitle()])
-        self._commands = commands
-        self._model.setStringList(sorted(commands, key=str.casefold))
-
-    def _run(self, text):
-        action = self._commands.get(text)
-        if action is None and text:
-            low = text.casefold()
-            action = next((a for k, a in self._commands.items() if k.casefold().startswith(low)), None)
-        if action is not None and action.isEnabled():
-            self.clear()
-            self.clearFocus()
-            action.trigger()
+    def _hand_over(self, text):
+        self.clear()
+        self.clearFocus()
+        self._open(text)
 
 
 class RibbonWidget(QWidget):
@@ -499,12 +698,14 @@ class RibbonWidget(QWidget):
         self.iface = iface
         self._window = iface.mainWindow()
         self._index = ActionIndex(self._window)
+        self._m = Metrics(self.font())
         self._own = {}
         self._pages = {}
         self._dirty = set()
         self._layer_kind = None
         self._collapsed = False
         self._peek = False
+        self._project_active = False
         self._project_chrome_callback = None
         for action in (restore_action, focus_action, restore_panels_action):
             action.setParent(self)
@@ -516,7 +717,7 @@ class RibbonWidget(QWidget):
 
         self.setObjectName("QRibbonSkinWidget")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setStyleSheet(stylesheet())
+        self.setStyleSheet(stylesheet(self.palette()))
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -524,16 +725,9 @@ class RibbonWidget(QWidget):
         outer.addWidget(self._make_tab_strip())
         self.pages = QStackedWidget(self)
         self.pages.setObjectName("QRibbonSkinPages")
-        self.pages.setFixedHeight(RIBBON_H)
+        self.pages.setFixedHeight(self._m.ribbon_h)
         outer.addWidget(self.pages)
-        self._divider = QFrame(self)
-        self._divider.setFrameShape(QFrame.Shape.HLine)
-        self._divider.setFrameShadow(QFrame.Shadow.Plain)
-        pal = self._divider.palette()
-        pal.setColor(QPalette.ColorRole.WindowText, pal.color(QPalette.ColorRole.Mid))
-        self._divider.setPalette(pal)
-        self._divider.setFixedHeight(1)
-        outer.addWidget(self._divider)
+        self.spotlight = Spotlight(self._window)
 
         self._layer_kind = self._current_layer_kind()
         try:
@@ -543,7 +737,7 @@ class RibbonWidget(QWidget):
         self._keep_native_shortcuts()
         self._shortcuts = []
         for keys, slot in ((COLLAPSE_SHORTCUT, self.toggle_collapsed),
-                           (SEARCH_SHORTCUT, self.focus_search)):
+                           (SEARCH_SHORTCUT, self.open_spotlight)):
             # Parented to the Ribbon: Qt removes them together with it.
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
@@ -564,7 +758,7 @@ class RibbonWidget(QWidget):
             action.triggered.connect(slot)
             self._own[name] = action
 
-        add(spec.COMMAND_SEARCH, lambda _c=False: self.focus_search())
+        add(spec.COMMAND_SEARCH, lambda _c=False: self.open_spotlight())
         add(spec.TOGGLE_RIBBON, lambda _c=False: self.toggle_collapsed())
         for name in spec.COMMAND_ICONS:
             if name.startswith(spec.ALG):
@@ -584,14 +778,13 @@ class RibbonWidget(QWidget):
                 import processing  # QGIS builds exposing the plugin module
             processing.execAlgorithmDialog(alg_id)
         except Exception as exc:  # Processing disabled or algorithm missing
+            from qgis.core import QgsMessageLog, Qgis
             try:
-                from qgis.core import Qgis
                 self.iface.messageBar().pushMessage(
                     "QRibbonSkin", tr("Algoritmo indisponível: {alg}").format(alg=alg_id),
                     Qgis.MessageLevel.Warning, 5)
             except Exception:
                 pass
-            from qgis.core import QgsMessageLog, Qgis
             QgsMessageLog.logMessage(str(exc), "QRibbonSkin", Qgis.MessageLevel.Warning)
 
     def _resolve(self, name):
@@ -604,7 +797,7 @@ class RibbonWidget(QWidget):
     def _make_header(self):
         header = QWidget(self)
         header.setObjectName("QRibbonSkinHeader")
-        header.setFixedHeight(HEADER_H)
+        header.setFixedHeight(self._m.header_h)
         row = QHBoxLayout(header)
         row.setContentsMargins(8, 2, 10, 2)
         row.setSpacing(1)
@@ -615,38 +808,33 @@ class RibbonWidget(QWidget):
             button = QToolButton(header)
             button.setDefaultAction(action)
             button.setAutoRaise(True)
-            button.setIconSize(QSize(16, 16))
+            button.setIconSize(QSize(SMALL_ICON, SMALL_ICON))
             button.setFixedSize(26, 24)
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
             if button.icon().isNull():
                 button.setIcon(theme_icon("/mActionHistory.svg"))
             row.addWidget(button)
         row.addStretch(1)
-        self.search = CommandSearch(self._window, header)
+        self.search = SearchBox(self.open_spotlight, header)
         row.addWidget(self.search)
         return header
 
     def _make_tab_strip(self):
         strip = QWidget(self)
         strip.setObjectName("QRibbonSkinTabStrip")
-        strip.setFixedHeight(TAB_STRIP_H)
+        strip.setFixedHeight(self._m.tab_h)
         row = QHBoxLayout(strip)
         row.setContentsMargins(8, 0, 8, 0)
         row.setSpacing(6)
-        project = QToolButton(strip)
-        project.setObjectName("QRibbonSkinProjectButton")
-        project.setText(tr("Projeto"))
-        project.setToolTip(tr("Abrir, salvar e criar projetos"))
-        project.setFixedHeight(24)
-        project.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        native_project = None
-        try:
-            native_project = self.iface.projectMenu()
-        except (AttributeError, RuntimeError):
-            native_project = self._index.menu("mProjectMenu")
-        if native_project is not None:
-            project.setMenu(native_project)
-        row.addWidget(project, 0, Qt.AlignmentFlag.AlignVCenter)
+        # RustGIS's Project button: its commands open *in the Ribbon*.
+        self.project_button = QToolButton(strip)
+        self.project_button.setObjectName("QRibbonSkinProjectButton")
+        self.project_button.setText(tr("Projeto"))
+        self.project_button.setToolTip(tr("Abrir, salvar e criar projetos"))
+        self.project_button.setCheckable(True)
+        self.project_button.setFixedHeight(min(26, self._m.tab_h - 4))
+        self.project_button.clicked.connect(self._on_project_clicked)
+        row.addWidget(self.project_button, 0, Qt.AlignmentFlag.AlignVCenter)
         self.tabs = QTabBar(strip)
         self.tabs.setObjectName("QRibbonSkinTabs")
         self.tabs.setDrawBase(False)
@@ -654,6 +842,7 @@ class RibbonWidget(QWidget):
         self.tabs.setUsesScrollButtons(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
         self.tabs.setDocumentMode(True)
+        self.tabs.setProperty("projectActive", False)
         for tab_id, caption in spec.TABS:
             index = self.tabs.addTab(tr(caption))
             self.tabs.setTabData(index, tab_id)
@@ -673,24 +862,46 @@ class RibbonWidget(QWidget):
     def _tab_id(self, index):
         return self.tabs.tabData(index)
 
+    def _page(self, tab_id):
+        page = self._pages.get(tab_id)
+        if page is None or tab_id in self._dirty:
+            page = self._build_page(tab_id, page)
+        return page
+
     def _show_tab(self, index):
         tab_id = self._tab_id(index)
         if tab_id is None:
             return
-        page = self._pages.get(tab_id)
-        if page is None or tab_id in self._dirty:
-            page = self._build_page(tab_id, page)
-        self.pages.setCurrentWidget(page)
+        if self._project_active:
+            self._set_project_active(False, show=False)
+        self.pages.setCurrentWidget(self._page(tab_id))
+
+    def _on_project_clicked(self):
+        active = not self._project_active
+        if self._collapsed:
+            self._peek = active
+        self._set_project_active(active)
+
+    def _set_project_active(self, active, show=True):
+        self._project_active = active
+        self.project_button.setChecked(active)
+        self.tabs.setProperty("projectActive", active)
+        self.tabs.style().unpolish(self.tabs)
+        self.tabs.style().polish(self.tabs)
+        self.tabs.update()
+        if show:
+            if active:
+                self.pages.setCurrentWidget(self._page(spec.PROJECT_TAB))
+            else:
+                self.pages.setCurrentWidget(self._page(self._tab_id(self.tabs.currentIndex())))
+        self._update_height()
 
     def _build_page(self, tab_id, old=None):
         page = RibbonPage(self.pages)
-        groups = spec.visible_groups(tab_id, self._layer_kind)
-        drawn = 0
-        for grp in groups:
+        for grp in spec.visible_groups(tab_id, self._layer_kind):
             widget = self._build_group(grp)
             if widget is not None:
                 page.add_group(widget)
-                drawn += 1
         if tab_id in spec.LAYER_DEPENDENT_TABS and self._layer_kind is None:
             page.row.insertWidget(0, self._hint_group(tab_id), 0, Qt.AlignmentFlag.AlignTop)
         page.row.addStretch(1)
@@ -708,11 +919,11 @@ class RibbonWidget(QWidget):
             "style": "Selecione uma camada no painel Camadas para definir seu estilo.",
             "labeling": "Selecione uma camada vetorial no painel Camadas para rotulá-la.",
         }
-        grp = RibbonGroup(tr("Camada"))
+        grp = RibbonGroup(self._m, tr("Camada"))
         label = QLabel(tr(texts[tab_id]), grp)
         label.setObjectName("QRibbonSkinHint")
         label.setWordWrap(True)
-        label.setFixedSize(230, CONTENT_H - 6)
+        label.setFixedSize(230, self._m.content_h - 6)
         label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         pal = label.palette()
         pal.setColor(QPalette.ColorRole.WindowText,
@@ -723,7 +934,7 @@ class RibbonWidget(QWidget):
         return grp
 
     def _build_group(self, grp):
-        widget = RibbonGroup(tr(grp["title"]))
+        widget = RibbonGroup(self._m, tr(grp["title"]))
         for item in grp["items"]:
             control = self._build_item(item, widget)
             if control is not None:
@@ -759,7 +970,7 @@ class RibbonWidget(QWidget):
             caption = tr(item["label"] or "")
             if size == "small":
                 caption = caption.replace("\n", " ")
-            button = RibbonButton(size, caption, theme_icon(item["icon"]), None, parent)
+            button = RibbonButton(self._m, size, caption, theme_icon(item["icon"]), None, parent)
             button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
             button.setMenu(menu)
             button.setToolTip(caption.replace("\n", " "))
@@ -774,7 +985,7 @@ class RibbonWidget(QWidget):
         if size == "small":
             caption = caption.replace("\n", " ")
         icon = item.get("icon") or spec.COMMAND_ICONS.get(item["name"])
-        button = RibbonButton(size, caption, theme_icon(icon), action, parent)
+        button = RibbonButton(self._m, size, caption, theme_icon(icon), action, parent)
         if kind == "split":
             menu = self._build_menu(item["entries"], parent)
             if menu is not None:
@@ -856,11 +1067,14 @@ class RibbonWidget(QWidget):
         self._layer_kind = kind
         self._dirty.update(spec.LAYER_DEPENDENT_TABS)
         current = self._tab_id(self.tabs.currentIndex())
-        if current in spec.LAYER_DEPENDENT_TABS:
-            self._show_tab(self.tabs.currentIndex())
+        if not self._project_active and current in spec.LAYER_DEPENDENT_TABS:
+            self.pages.setCurrentWidget(self._page(current))
 
     # -------------------------------------------------------------- collapse
     def _on_tab_clicked(self, index):
+        if self._project_active and index == self.tabs.currentIndex():
+            # currentChanged is not emitted for the current tab.
+            self._set_project_active(False)
         if self._collapsed:
             # RustGIS: on a collapsed ribbon a tab click shows it for one use.
             same = index == self.tabs.currentIndex() and self._peek
@@ -897,16 +1111,20 @@ class RibbonWidget(QWidget):
     def _update_height(self):
         show = not self._collapsed or self._peek
         self.pages.setVisible(show)
-        self.setFixedHeight(HEADER_H + TAB_STRIP_H + (RIBBON_H if show else 0) + 1)
-
-    def focus_search(self):
-        self.search.setFocus(Qt.FocusReason.ShortcutFocusReason)
-        self.search.selectAll()
+        self.setFixedHeight(self._m.header_h + self._m.tab_h + (self._m.ribbon_h if show else 0))
 
     def _end_peek(self, *_args):
         if self._peek:
             self._peek = False
+            if self._project_active:
+                self._set_project_active(False)
             self._update_height()
+
+    def open_spotlight(self, text=""):
+        self.spotlight.open(text if isinstance(text, str) else "")
+
+    # Backwards-compatible name used by older callers.
+    focus_search = open_spotlight
 
     # ---------------------------------------------------- native shortcuts
     def _keep_native_shortcuts(self):
@@ -914,7 +1132,7 @@ class RibbonWidget(QWidget):
 
         Qt ignores the shortcut of a QAction whose only widgets are hidden (a
         hidden QMenuBar, hidden toolbars). Registering the *same* QAction on
-        this visible widget keeps Ctrl+S, F5, etc. alive. Nothing is changed
+        this visible widget keeps Ctrl+S, F6, etc. alive. Nothing is changed
         on the QAction itself, and Qt drops the registration with this widget.
         """
         seen = set()
@@ -939,11 +1157,11 @@ class RibbonWidget(QWidget):
 
     # ---------------------------------------------------- plugin.py contract
     def set_project_chrome_callback(self, callback):
-        """Kept for plugin.py; the Project button now opens the native menu."""
+        """Kept for plugin.py; the Project page now lives in the Ribbon."""
         self._project_chrome_callback = callback
 
     def release_project_dashboard(self):
-        """Kept for plugin.py; there is no custom backstage any more."""
+        """Kept for plugin.py: disconnect before the Ribbon is deleted."""
         self.release()
 
     def release(self):
@@ -957,3 +1175,8 @@ class RibbonWidget(QWidget):
                 shortcut.setEnabled(False)
             except RuntimeError:
                 pass
+        try:
+            self.spotlight.close()
+            self.spotlight.deleteLater()
+        except RuntimeError:
+            pass

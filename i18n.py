@@ -328,3 +328,13 @@ EN.update({
     'Camadas': 'Layers', 'Layout': 'Layout', 'Vetor': 'Vector', 'Personalizar': 'Customize',
     'Ajuda': 'Help', 'Decorações': 'Decorations',
 })
+
+# QRibbonSkin 1.2.1: Project page in the Ribbon.
+EN.update({
+    'Recentes e modelos': 'Recent and Templates', 'Projetos\nrecentes': 'Recent\nProjects',
+    'Novo a partir\nde modelo': 'New From\nTemplate', 'Abrir de': 'Open From',
+    'Salvar em': 'Save To', 'Importar e exportar': 'Import and Export',
+    'Importar/\nexportar': 'Import/\nExport', 'Projeto atual': 'Current Project',
+    'Reverter': 'Revert', 'Fechar': 'Close', 'Sair do QGIS': 'Exit QGIS',
+    'Novo': 'New', 'Abrir': 'Open', 'Salvar\ncomo': 'Save\nAs',
+})
