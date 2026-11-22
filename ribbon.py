@@ -1586,64 +1586,56 @@ class RibbonWidget(RibbonFrame):
         result.sort(key=lambda g: (g["title"] == others, fold(g["title"])))
         return result
 
-    def _plugin_button(self, action, size, parent):
-        caption = clean_caption(action.text())
-        if size == "big":
-            caption = self._two_lines(caption)
-        sub = action.menu()
-        if sub is not None:
-            icon = action.icon() if not action.icon().isNull() else sub.icon()
-            if icon.isNull():
-                icon = theme_icon("/propertyicons/plugins.svg")
-            button = RibbonButton(self._m, size, caption, icon, None, parent)
-            button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-            button.setMenu(sub)
-            button.setToolTip(clean_caption(action.text()))
+    @staticmethod
+    def _plugin_icon(entry):
+        """The plugin's own icon: its first command (or submenu) with one."""
+        for action in entry["actions"]:
+            for icon in (action.icon(), action.menu().icon() if action.menu() else QIcon()):
+                if not icon.isNull():
+                    return icon
+        return theme_icon("/propertyicons/plugins.svg")
+
+    def _plugin_control(self, entry, parent):
+        """One button per plugin (saves Ribbon width):
+        * a single command: the button runs it directly (no one-item menu);
+        * otherwise: a dropdown with the plugin's commands and submenus, and,
+          for a bar with controls that only work on it, "Show toolbar".
+        Commands are the plugin's own QActions, referenced, never copied."""
+        caption = self._two_lines(entry["title"])
+        icon = self._plugin_icon(entry)
+        actions = list(entry["actions"])
+        bar = entry["toolbar"]
+        if len(actions) == 1 and bar is None and actions[0].menu() is None:
+            button = RibbonButton(self._m, "big", caption, icon, actions[0], parent)
+            button.setToolTip("%s — %s" % (entry["title"], clean_caption(actions[0].text())))
         else:
-            button = RibbonButton(self._m, size, caption,
-                                  theme_icon("/propertyicons/plugins.svg"), action, parent)
+            button = RibbonButton(self._m, "big", caption, icon, None, parent)
+            if len(actions) == 1 and bar is None:
+                menu = actions[0].menu()  # the plugin is a single submenu
+            else:
+                menu = QMenu(button)
+                for action in actions:
+                    menu.addAction(action)
+                if bar is not None:
+                    if menu.actions():
+                        menu.addSeparator()
+                    show_bar = menu.addAction(theme_icon("/mActionInterfaceCustomization.svg"),
+                                              tr("Mostrar barra de ferramentas"))
+                    show_bar.setCheckable(True)
+                    show_bar.toggled.connect(lambda on, b=bar: b.setVisible(on))
+                    menu.aboutToShow.connect(
+                        lambda a=show_bar, b=bar: self._sync_check(a, b.isVisible()))
+            button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            button.setMenu(menu)
+            button.setToolTip(entry["title"])
         button.triggered.connect(self._end_peek)
         return button
 
-    def _plugin_group(self, entry):
-        """One plugin: up to 4 commands as big buttons (RustGIS), beyond that
-        two big and the rest in columns of three small ones."""
-        grp = RibbonGroup(self._m, entry["title"])
-        actions = list(entry["actions"])
-        extras = []
-        if entry["toolbar"] is not None:
-            # The bar's own show/hide QAction (never modified): for plugin
-            # controls such as combo boxes, which only work on the bar.
-            extras.append(entry["toolbar"].toggleViewAction())
-        bar_icon = theme_icon("/mActionInterfaceCustomization.svg")
-        bigs, rest = (actions, []) if len(actions) <= 4 else (actions[:2], actions[2:])
-        for action in bigs:
-            grp.add(self._plugin_button(action, "big", grp))
-        rest += extras
-        for start in range(0, len(rest), 3):
-            chunk = rest[start:start + 3]
-            if len(chunk) == 1:  # never a lone small button
-                if chunk[0] in extras:
-                    button = RibbonButton(self._m, "big", tr("Barra de\nferramentas"),
-                                          bar_icon, chunk[0], grp)
-                else:
-                    button = self._plugin_button(chunk[0], "big", grp)
-                grp.add(button)
-                continue
-            column = QWidget(grp)
-            layout = QVBoxLayout(column)
-            layout.setContentsMargins(0, 1, 0, 0)
-            layout.setSpacing(1)
-            layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-            for action in chunk:
-                if action in extras:
-                    button = RibbonButton(self._m, "small", tr("Barra de ferramentas"),
-                                          bar_icon, action, column)
-                else:
-                    button = self._plugin_button(action, "small", column)
-                layout.addWidget(button)
-            grp.add(column)
-        return grp
+    @staticmethod
+    def _sync_check(action, checked):
+        action.blockSignals(True)
+        action.setChecked(checked)
+        action.blockSignals(False)
 
     def trailing_groups(self, tab_id):
         if tab_id != "plugins":
@@ -1655,7 +1647,12 @@ class RibbonWidget(RibbonFrame):
                                    "Use Gerenciar complementos.")
             hint.label.setText(tr("Complementos instalados"))
             return [hint]
-        return [self._plugin_group(e) for e in entries]
+        # All plugins in one group: a separate group per one-button plugin
+        # would only repeat its name and add dividers.
+        grp = RibbonGroup(self._m, tr("Complementos instalados"))
+        for entry in entries:
+            grp.add(self._plugin_control(entry, grp))
+        return [grp]
 
     def _current_layer_kind(self):
         try:

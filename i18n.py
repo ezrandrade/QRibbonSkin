@@ -399,3 +399,6 @@ EN.update({
     'Nenhum complemento com comandos está instalado ou ativo. Use Gerenciar complementos.':
         'No plugin with commands is installed or enabled. Use Plugin Manager.',
 })
+
+# QRibbonSkin 1.4.1: one button per plugin.
+EN.update({'Mostrar barra de ferramentas': 'Show toolbar'})

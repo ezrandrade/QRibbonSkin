@@ -1,4 +1,4 @@
-# QRibbonSkin 1.4.0
+# QRibbonSkin 1.4.1
 
 O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, e a **página inicial original do QGIS** é preservada.
 
@@ -15,7 +15,7 @@ O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **m
 - Atalhos de teclado nativos continuam funcionando com a barra de menus oculta.
 - Sem redundâncias: dentro de uma guia nenhum comando aparece duas vezes (os menus nativos usados como botões suspensos omitem o que já tem botão na guia); entre guias, só as repetições que o RustGIS também faz (tabela de atributos, seleção por atributos/localização e Exibir › Janelas espelhando os painéis). A guia Complementos mostra só o gerenciador e o conteúdo dos complementos instalados.
 - Georreferenciador sempre visível na guia **Dados** (grupo Alinhamento).
-- **Complementos** como no RustGIS: o Gerenciador de complementos e **um grupo por complemento instalado**, com os comandos que ele adicionou aos menus do QGIS (Complementos, Vetor, Raster, Banco de dados, Web, Malha, Processamento), a um menu próprio ou à sua barra de ferramentas, sem repetir o mesmo comando. Se a barra do complemento tiver controles que só funcionam nela (como caixas de seleção), o grupo oferece um botão para mostrá-la. A guia é remontada apenas quando um complemento é instalado, ativado ou removido. Os comandos do próprio QGIS (incluindo os algoritmos do Processing) permanecem nas guias de origem; um complemento que nomeie seus comandos no padrão interno do QGIS (`mAction…`) seria tratado como comando do QGIS.
+- **Complementos**: o Gerenciador de complementos e, no grupo **Complementos instalados**, **um botão por complemento** (ícone e nome do complemento), para economizar espaço. Um complemento com um único comando o executa direto; com vários, o botão abre um menu com todas as suas funções (incluindo submenus, como os provedores do QuickMapServices) e, se a barra dele tiver controles que só funcionam nela, *Mostrar barra de ferramentas*. Os comandos vêm dos menus do QGIS em que o complemento se instalou (Complementos, Vetor, Raster, Banco de dados, Web, Malha, Processamento), de um menu próprio ou da sua barra, sem repetição. A guia é remontada apenas quando um complemento é instalado, ativado ou removido. Os comandos do próprio QGIS (incluindo os algoritmos do Processing) permanecem nas guias de origem; um complemento que nomeie seus comandos no padrão interno do QGIS (`mAction…`) seria tratado como comando do QGIS.
 - Leve: sem temporizadores e sem filtros de eventos globais; janelas detectadas por sinais do QGIS, mudança de foco e criação de barras; guias montadas sob demanda.
 - Retorno à interface clássica (Configurações → Interface clássica, ou Ctrl+Alt+Shift+R) e recuperação de barras e painéis.
 
@@ -39,7 +39,7 @@ Essas validações foram comunicadas pelo responsável pelos testes; não consti
 
 ## Utilização
 
-Use a guia **Início** para navegar, adicionar dados, selecionar, medir e identificar; **Dados**, **Estilo** e **Rotulagem** para a camada selecionada; **Editar** para edição vetorial; **Analisar** para a Caixa de Ferramentas, o Designer de Modelos e os menus Vetor/Raster/Malha/Banco de dados; **Exibir** para painéis, decorações e vistas; **Publicar** para layouts, relatórios e exportação; **Complementos** para o gerenciador e os comandos de cada complemento instalado, agrupados por complemento.
+Use a guia **Início** para navegar, adicionar dados, selecionar, medir e identificar; **Dados**, **Estilo** e **Rotulagem** para a camada selecionada; **Editar** para edição vetorial; **Analisar** para a Caixa de Ferramentas, o Designer de Modelos e os menus Vetor/Raster/Malha/Banco de dados; **Exibir** para painéis, decorações e vistas; **Publicar** para layouts, relatórios e exportação; **Complementos** para o gerenciador e um botão por complemento instalado.
 
 ## Licença e créditos
 
