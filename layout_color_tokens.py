@@ -9,7 +9,7 @@ from .theme import light_palette
 
 LAYOUT_CHROME = light_palette()
 LAYOUT_CHROME.update({
-    'panel': '#f7f9fc',            # same neutral base as Ribbon chrome
+    'panel': LAYOUT_CHROME['canvas'],  # same native base as Ribbon chrome
     'paper_surround': '#d5d5d5',   # documentation ONLY; canvas not styled
 })
 
@@ -23,7 +23,7 @@ def _render(qss):
 RIBBON_LIGHT_QSS = _render("""
 QWidget#QRibbonLayoutWidget {
     background-color: @canvas@; color: @text@;
-    font-family: 'Segoe UI', 'Noto Sans', sans-serif;
+
 }
 QTabWidget#QRibbonLayoutTabs { border: 0; margin: 0; padding: 0;
     background-color: @canvas@; }

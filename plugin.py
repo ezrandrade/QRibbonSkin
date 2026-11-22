@@ -568,7 +568,7 @@ class QRibbonSkinPlugin(QObject):
         bar.setContentsMargins(0, 0, 0, 0)
         bar.setStyleSheet(
             "QToolBar#QRibbonSkinToolbar { "
-            "background-color: #f7f9fc; border: none; padding: 0; margin: 0; spacing: 0; }"
+            "background-color: palette(window); border: none; padding: 0; margin: 0; spacing: 0; }"
             " QToolBar#QRibbonSkinToolbar::handle { width: 0px; height: 0px; border: none; }"
             " QToolBar#QRibbonSkinToolbar::separator { width: 0px; border: none; }"
         )
@@ -609,9 +609,7 @@ class QRibbonSkinPlugin(QObject):
         # Changing styles can make QGIS re-show a dock (notably Browser).
         # Keep precisely the user's panel visibility snapshot from activation.
         self._preserve_initial_docks()
-        # Decoration only; never move or change native dock content.
-        self._panel_light_theme.start()
-        self._preserve_initial_docks()
+        # v1.2.0: QGIS panels keep their native look (no dock restyling).
         # Optional subwindow integration; native main QGIS remains independent.
         try:
             self._layout_manager.start()

@@ -25,7 +25,7 @@ from .layout_designer_model import (
     tab_for_native_toolbar, layout_action_placement, LAYOUT_GROUP_ORDER, normalized,
 )
 from .icon_mapping import display_icon
-from .ribbon import RibbonActionButton
+from .designer_widgets import RibbonActionButton
 from .theme import light_palette
 from .layout_color_tokens import (
     DOCK_LIGHT_QSS, TOOLBAR_LIGHT_QSS,

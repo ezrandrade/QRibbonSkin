@@ -29,8 +29,8 @@ from .georeferencer_model import (
     connection_display_caption, georeferencer_display_caption
 )
 from .icon_mapping import display_icon
-from .theme import light_palette
-from .ribbon import RibbonActionButton
+from .theme import light_palette, nativize
+from .designer_widgets import RibbonActionButton
 from .georeferencer_model import canonical
 
 BAR_NAME = 'QRibbonSkinGeoreferencerToolbar'
@@ -325,7 +325,6 @@ class GeoreferencerRibbon(QWidget):
     QSS = r'''
     QWidget#QRibbonGeorefWidget {
         background-color: #f7f9fc; color: #24364a;
-        font-family: 'Segoe UI', 'Noto Sans', sans-serif;
     }
     /* Uniform canvas across the tab strip, pane and scroll viewport.
        Qt can otherwise paint the Georeferencer's native toolbar palette as
@@ -376,7 +375,7 @@ class GeoreferencerRibbon(QWidget):
         self.setMinimumWidth(0)
         self.setFixedHeight(124)  # same compact height as the main QGIS Ribbon
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setStyleSheet(self.QSS)
+        self.setStyleSheet(nativize(self.QSS))
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -967,7 +966,7 @@ class GeoreferencerSession(QObject):
         self.toolbar.setMinimumWidth(0)
         self.toolbar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.toolbar.setStyleSheet('QToolBar#' + BAR_NAME +
-                                   ' { background: #f7f9fc; border: 0; spacing: 0; }')
+                                   nativize(' { background: #f7f9fc; border: 0; spacing: 0; }'))
         try:
             self.ribbon = GeoreferencerRibbon(window, self.set_native_visible, self.toolbar)
             self.toolbar.addWidget(self.ribbon)

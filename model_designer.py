@@ -17,6 +17,7 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from .i18n import tr, ui_label
+from .theme import nativize
 from .georeferencer import (
     _CommandGroup, GeoreferencerSpotlight, GeoreferencerRibbon, _alive,
 )
@@ -97,7 +98,7 @@ class ModelDesignerRibbon(QWidget):
         self.setMinimumWidth(0)
         self.setFixedHeight(124)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setStyleSheet(self.QSS)
+        self.setStyleSheet(nativize(self.QSS))
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -369,7 +370,7 @@ class ModelDesignerSession(QObject):
         self.toolbar.setMinimumWidth(0)
         self.toolbar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.toolbar.setStyleSheet('QToolBar#' + BAR_NAME +
-                                   ' { background: #f7f9fc; border: 0; spacing: 0; }')
+                                   nativize(' { background: #f7f9fc; border: 0; spacing: 0; }'))
         try:
             self.ribbon = ModelDesignerRibbon(window, self.set_native_visible, self.toolbar)
             self.toolbar.addWidget(self.ribbon)
