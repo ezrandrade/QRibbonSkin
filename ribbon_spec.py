@@ -167,6 +167,7 @@ LAYER_DEPENDENT_TABS = ("data", "style", "labeling")
 # project backstage there). Only native QGIS project commands and menus; the
 # QGIS welcome page in the map area is never replaced.
 PROJECT_TAB = "project"
+PROJECT_BUTTON = ("Projeto", "Abrir, salvar e criar projetos")
 
 # Redundancy rules (checked by an automated audit, as RustGIS does it):
 # 1. Inside one tab a command appears once. Native menus used as dropdowns

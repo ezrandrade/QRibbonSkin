@@ -776,31 +776,45 @@ class SearchBox(QLineEdit):
         self._open(text)
 
 
-class RibbonWidget(QWidget):
-    """The main-window Ribbon. Constructor signature kept for plugin.py."""
+def _spec_value(spec_module, name, default):
+    return getattr(spec_module, name, default)
 
-    def __init__(self, iface, restore_action, focus_action, restore_panels_action, parent=None):
+
+class RibbonFrame(QWidget):
+    """A RustGIS-style Ribbon for any QGIS QMainWindow, driven by a spec.
+
+    The spec module provides TABS, GROUPS, QUICK_ACCESS and optionally
+    PROJECT_TAB/PROJECT_BUTTON (the "Projeto"-style button whose commands open
+    in the Ribbon), GLOBAL_DEDUP_TABS and COMMAND_LABELS/ICONS/TIPS. The main
+    window and the Layout Designer, Georeferencer and Model Designer share
+    this class, so they share the look, metrics, Spotlight and the rule that
+    no command appears twice in one tab.
+
+    Names in a spec are resolved against the hosting window:
+    * an objectName of a QAction or QMenu of that window;
+    * ``key:<StandardKey>`` for QGIS actions without objectName that carry a
+      platform standard shortcut (Cut, Copy, Paste, Undo, Redo, …);
+    * names registered in ``own`` (QRibbonSkin's interface commands).
+    """
+
+    def __init__(self, window, spec_module, own=None, parent=None):
         super().__init__(parent)
-        self.iface = iface
-        self._window = iface.mainWindow()
-        self._index = ActionIndex(self._window)
+        self.spec = spec_module
+        self._window = window
+        self._index = ActionIndex(window)
         self._m = Metrics(self.font())
-        self._own = {}
+        self._own = dict(own or {})
+        for action in self._own.values():
+            if action.parent() is None:
+                action.setParent(self)
         self._pages = {}
         self._dirty = set()
-        self._layer_kind = None
         self._collapsed = False
         self._peek = False
         self._project_active = False
         self._claimed = set()
-        self._project_chrome_callback = None
-        for action in (restore_action, focus_action, restore_panels_action):
-            action.setParent(self)
-        restore_panels_action.triggered.connect(lambda _c=False: focus_action.setChecked(False))
-        self._own[spec.CLASSIC] = restore_action
-        self._own[spec.FOCUS_MAP] = focus_action
-        self._own[spec.RESTORE_PANELS] = restore_panels_action
-        self._make_plugin_actions()
+        self._shortcuts = []
+        self._make_own_actions()
 
         self.setObjectName("QRibbonSkinWidget")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -816,14 +830,9 @@ class RibbonWidget(QWidget):
         outer.addWidget(self.pages)
         self.spotlight = Spotlight(self._window)
 
-        self._layer_kind = self._current_layer_kind()
-        self._sync_layer_actions()
-        try:
-            iface.currentLayerChanged.connect(self._on_layer_changed)
-        except (AttributeError, RuntimeError, TypeError):
-            pass
+    def start(self):
+        """Finish set-up once subclasses are initialised."""
         self._keep_native_shortcuts()
-        self._shortcuts = []
         for keys, slot in ((COLLAPSE_SHORTCUT, self.toggle_collapsed),
                            (SEARCH_SHORTCUT, self.open_spotlight)):
             # Parented to the Ribbon: Qt removes them together with it.
@@ -832,70 +841,47 @@ class RibbonWidget(QWidget):
             shortcut.activated.connect(slot)
             shortcut.activatedAmbiguously.connect(slot)
             self._shortcuts.append(shortcut)
-        self.tabs.setCurrentIndex(0)
-        self._show_tab(0)
+        if self.tabs.count():
+            self.tabs.setCurrentIndex(0)
+            self._show_tab(0)
         self._update_height()
 
-    # ----------------------------------------------------------- plugin actions
-    def _make_plugin_actions(self):
-        def add(name, slot, checkable=False):
-            action = QAction(theme_icon(spec.COMMAND_ICONS.get(name)),
-                             tr(spec.COMMAND_LABELS.get(name, name)).replace("\n", " "), self)
-            action.setToolTip(tr(spec.COMMAND_TIPS.get(name, "")))
-            action.setCheckable(checkable)
-            action.triggered.connect(slot)
-            self._own[name] = action
+    # ----------------------------------------------------------- own actions
+    def _add_own(self, name, slot, checkable=False):
+        labels = _spec_value(self.spec, "COMMAND_LABELS", {})
+        icons = _spec_value(self.spec, "COMMAND_ICONS", {})
+        tips = _spec_value(self.spec, "COMMAND_TIPS", {})
+        action = QAction(theme_icon(icons.get(name)),
+                         tr(labels.get(name, name)).replace("\n", " "), self)
+        action.setToolTip(tr(tips.get(name, "")))
+        action.setCheckable(checkable)
+        action.triggered.connect(slot)
+        self._own[name] = action
+        return action
 
-        add(spec.COMMAND_SEARCH, lambda _c=False: self.open_spotlight())
-        add(spec.TOGGLE_RIBBON, lambda _c=False: self.toggle_collapsed())
-        for page, (caption, icon, tip) in spec.PROPERTY_PAGES.items():
-            action = QAction(theme_icon(icon), tr(caption).replace("\n", " "), self)
-            action.setToolTip(tr(tip))
-            action.triggered.connect(lambda _c=False, p=page: self._show_properties(p))
-            self._own[spec.PROPS + page] = action
-        for name in spec.COMMAND_ICONS:
-            if name.startswith(spec.ALG):
-                alg = name[len(spec.ALG):]
-                add(name, lambda _c=False, a=alg: self._run_algorithm(a))
-        for name in (spec.CLASSIC, spec.FOCUS_MAP, spec.RESTORE_PANELS):
-            action = self._own[name]
-            if action.icon().isNull():
-                action.setIcon(theme_icon(spec.COMMAND_ICONS[name]))
-
-    def _show_properties(self, page):
-        """Native Layer Properties dialog, opened on ``page``."""
-        layer = self.iface.activeLayer()
-        if layer is not None:
-            self.iface.showLayerProperties(layer, page)
-
-    def _sync_layer_actions(self):
-        has_layer = self._layer_kind is not None
-        for page in spec.PROPERTY_PAGES:
-            self._own[spec.PROPS + page].setEnabled(has_layer)
-
-    def _run_algorithm(self, alg_id):
-        """Open a native Processing algorithm dialog (no algorithm is ours)."""
-        try:
-            try:
-                from qgis import processing
-            except ImportError:
-                import processing  # QGIS builds exposing the plugin module
-            processing.execAlgorithmDialog(alg_id)
-        except Exception as exc:  # Processing disabled or algorithm missing
-            from qgis.core import QgsMessageLog, Qgis
-            try:
-                self.iface.messageBar().pushMessage(
-                    "QRibbonSkin", tr("Algoritmo indisponível: {alg}").format(alg=alg_id),
-                    Qgis.MessageLevel.Warning, 5)
-            except Exception:
-                pass
-            QgsMessageLog.logMessage(str(exc), "QRibbonSkin", Qgis.MessageLevel.Warning)
+    def _make_own_actions(self):
+        self._add_own(spec.COMMAND_SEARCH, lambda _c=False: self.open_spotlight())
+        self._add_own(spec.TOGGLE_RIBBON, lambda _c=False: self.toggle_collapsed())
 
     def _resolve(self, name):
         """The QAction for a spec name, or None when this QGIS lacks it."""
         if name in self._own:
             return self._own[name]
+        if name.startswith("key:"):
+            return self._action_by_standard_key(name[4:])
         return self._index.action(name)
+
+    def _action_by_standard_key(self, key_name):
+        key = getattr(QKeySequence.StandardKey, key_name, None)
+        if key is None:
+            return None
+        wanted = QKeySequence.keyBindings(key)
+        if not wanted:
+            return None
+        for action in self._window.findChildren(QAction):
+            if any(seq in wanted for seq in action.shortcuts()):
+                return action
+        return None
 
     # ------------------------------------------------------------------ chrome
     def _make_header(self):
@@ -905,7 +891,7 @@ class RibbonWidget(QWidget):
         row = QHBoxLayout(header)
         row.setContentsMargins(8, 2, 10, 2)
         row.setSpacing(1)
-        for name in spec.QUICK_ACCESS:
+        for name in _spec_value(self.spec, "QUICK_ACCESS", ()):
             action = self._resolve(name)
             if action is None:
                 continue
@@ -923,6 +909,17 @@ class RibbonWidget(QWidget):
         row.addWidget(self.search)
         return header
 
+    def _tab_available(self, tab):
+        """A tab listed as (id, caption, "menu:<objectName>") exists only
+        while that native menu exists (QGIS deletes, e.g., the Atlas menu in
+        report designers)."""
+        if len(tab) < 3 or not tab[2]:
+            return True
+        requirement = tab[2]
+        if requirement.startswith("menu:"):
+            return self._window.findChild(QMenu, requirement[5:]) is not None
+        return self._resolve(requirement) is not None
+
     def _make_tab_strip(self):
         strip = QWidget(self)
         strip.setObjectName("QRibbonSkinTabStrip")
@@ -930,15 +927,18 @@ class RibbonWidget(QWidget):
         row = QHBoxLayout(strip)
         row.setContentsMargins(8, 0, 8, 0)
         row.setSpacing(6)
-        # RustGIS's Project button: its commands open *in the Ribbon*.
-        self.project_button = QToolButton(strip)
-        self.project_button.setObjectName("QRibbonSkinProjectButton")
-        self.project_button.setText(tr("Projeto"))
-        self.project_button.setToolTip(tr("Abrir, salvar e criar projetos"))
-        self.project_button.setCheckable(True)
-        self.project_button.setFixedHeight(min(26, self._m.tab_h - 4))
-        self.project_button.clicked.connect(self._on_project_clicked)
-        row.addWidget(self.project_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.project_button = None
+        button_spec = _spec_value(self.spec, "PROJECT_BUTTON", None)
+        if button_spec is not None:
+            # RustGIS's Project button: its commands open *in the Ribbon*.
+            self.project_button = QToolButton(strip)
+            self.project_button.setObjectName("QRibbonSkinProjectButton")
+            self.project_button.setText(tr(button_spec[0]))
+            self.project_button.setToolTip(tr(button_spec[1]))
+            self.project_button.setCheckable(True)
+            self.project_button.setFixedHeight(min(26, self._m.tab_h - 4))
+            self.project_button.clicked.connect(self._on_project_clicked)
+            row.addWidget(self.project_button, 0, Qt.AlignmentFlag.AlignVCenter)
         self.tabs = QTabBar(strip)
         self.tabs.setObjectName("QRibbonSkinTabs")
         self.tabs.setDrawBase(False)
@@ -947,9 +947,11 @@ class RibbonWidget(QWidget):
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
         self.tabs.setDocumentMode(True)
         self.tabs.setProperty("projectActive", False)
-        for tab_id, caption in spec.TABS:
-            index = self.tabs.addTab(tr(caption))
-            self.tabs.setTabData(index, tab_id)
+        for tab in self.spec.TABS:
+            if not self._tab_available(tab):
+                continue
+            index = self.tabs.addTab(tr(tab[1]))
+            self.tabs.setTabData(index, tab[0])
         self.tabs.currentChanged.connect(self._show_tab)
         self.tabs.tabBarClicked.connect(self._on_tab_clicked)
         self.tabs.tabBarDoubleClicked.connect(lambda _i: self.toggle_collapsed())
@@ -987,6 +989,8 @@ class RibbonWidget(QWidget):
         self._set_project_active(active)
 
     def _set_project_active(self, active, show=True):
+        if self.project_button is None:
+            return
         self._project_active = active
         self.project_button.setChecked(active)
         self.tabs.setProperty("projectActive", active)
@@ -995,25 +999,33 @@ class RibbonWidget(QWidget):
         self.tabs.update()
         if show:
             if active:
-                self.pages.setCurrentWidget(self._page(spec.PROJECT_TAB))
+                self.pages.setCurrentWidget(self._page(self.spec.PROJECT_TAB))
             else:
                 self.pages.setCurrentWidget(self._page(self._tab_id(self.tabs.currentIndex())))
         self._update_height()
 
+    def visible_groups(self, tab_id):
+        """Groups of a tab; subclasses filter them by context."""
+        return [g for g in self.spec.GROUPS.get(tab_id, ()) if g.get("when") is None]
+
+    def leading_groups(self, tab_id):
+        """Extra widgets placed before a tab's groups (hints)."""
+        return []
+
     def _build_page(self, tab_id, old=None):
         page = RibbonPage(self.pages)
-        groups = spec.visible_groups(tab_id, self._layer_kind)
-        if tab_id in spec.GLOBAL_DEDUP_TABS:
-            everywhere = [g for t in spec.GROUPS.values() for g in t]
+        groups = self.visible_groups(tab_id)
+        if tab_id in _spec_value(self.spec, "GLOBAL_DEDUP_TABS", ()):
+            everywhere = [g for t in self.spec.GROUPS.values() for g in t]
             self._claimed = self._claimed_actions(everywhere)
         else:
             self._claimed = self._claimed_actions(groups)
+        for widget in self.leading_groups(tab_id):
+            page.add_group(widget)
         for grp in groups:
             widget = self._build_group(grp)
             if widget is not None:
                 page.add_group(widget)
-        if tab_id in spec.LAYER_DEPENDENT_TABS and self._layer_kind is None:
-            page.row.insertWidget(0, self._hint_group(tab_id), 0, Qt.AlignmentFlag.AlignTop)
         page.row.addStretch(1)
         self.pages.addWidget(page)
         if old is not None:
@@ -1023,14 +1035,9 @@ class RibbonWidget(QWidget):
         self._dirty.discard(tab_id)
         return page
 
-    def _hint_group(self, tab_id):
-        texts = {
-            "data": "Selecione uma camada no painel Camadas para ver suas ferramentas de dados.",
-            "style": "Selecione uma camada no painel Camadas para definir seu estilo.",
-            "labeling": "Selecione uma camada vetorial no painel Camadas para rotulá-la.",
-        }
+    def hint_group(self, text):
         grp = RibbonGroup(self._m, tr("Camada"))
-        label = QLabel(tr(texts[tab_id]), grp)
+        label = QLabel(tr(text), grp)
         label.setObjectName("QRibbonSkinHint")
         label.setWordWrap(True)
         label.setFixedSize(230, self._m.content_h - 6)
@@ -1043,6 +1050,10 @@ class RibbonWidget(QWidget):
         grp.add(label)
         return grp
 
+    def dynamic_actions(self, source):
+        """Actions for a ``dynamic`` spec item (subclasses); [] by default."""
+        return []
+
     def _claimed_actions(self, groups):
         """QActions that have their own control on this tab: buttons and
         entries of curated menus. Native dropdowns on the same tab omit them,
@@ -1054,6 +1065,10 @@ class RibbonWidget(QWidget):
                 item = stack.pop(0)
                 if item["kind"] == "col":
                     stack[:0] = item["items"]
+                    continue
+                if item["kind"] == "dynamic":
+                    claimed.update(a for a, _menu in self.dynamic_actions(item["source"])
+                                   if a is not None)
                     continue
                 names = [item["name"]] if "name" in item else []
                 entries = item.get("entries", ())
@@ -1098,13 +1113,57 @@ class RibbonWidget(QWidget):
     def _build_group(self, grp):
         widget = RibbonGroup(self._m, tr(grp["title"]))
         for item in grp["items"]:
-            control = self._build_item(item, widget)
-            if control is not None:
+            for control in self._build_controls(item, widget):
                 widget.add(control)
         if widget.count == 0:
             widget.deleteLater()
             return None
         return widget
+
+    def _build_controls(self, item, parent):
+        """Controls for one spec item (a ``dynamic`` item may yield many)."""
+        if item["kind"] != "dynamic":
+            control = self._build_item(item, parent)
+            return [control] if control is not None else []
+        controls = []
+        size = item.get("size", "big")
+        for action, menu in self.dynamic_actions(item["source"]):
+            if menu is not None:
+                caption = self.dynamic_menu_caption(menu)
+                button = RibbonButton(self._m, size, self._two_lines(caption) if size == "big"
+                                      else caption, menu.icon(), None, parent)
+                button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+                button.setMenu(menu)
+                button.setToolTip(caption)
+            else:
+                caption = self.dynamic_caption(action)
+                button = RibbonButton(self._m, size, self._two_lines(caption) if size == "big"
+                                      else caption, None, action, parent)
+            button.triggered.connect(self._end_peek)
+            controls.append(button)
+        return controls
+
+    def dynamic_caption(self, action):
+        return clean_caption(action.text())
+
+    def dynamic_menu_caption(self, menu):
+        return clean_caption(menu.title())
+
+    @staticmethod
+    def _two_lines(caption):
+        """Break a long single-line caption into two balanced lines."""
+        words = caption.split()
+        if len(words) < 2 or len(caption) <= 10:
+            return caption
+        best = min(range(1, len(words)),
+                   key=lambda i: abs(len(" ".join(words[:i])) - len(" ".join(words[i:]))))
+        return " ".join(words[:best]) + "\n" + " ".join(words[best:])
+
+    def _label_for(self, name):
+        return _spec_value(self.spec, "COMMAND_LABELS", {}).get(name)
+
+    def _icon_for(self, name):
+        return _spec_value(self.spec, "COMMAND_ICONS", {}).get(name)
 
     def _build_item(self, item, parent):
         kind = item["kind"]
@@ -1116,8 +1175,7 @@ class RibbonWidget(QWidget):
             layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
             added = 0
             for sub in item["items"]:
-                control = self._build_item(sub, column)
-                if control is not None:
+                for control in self._build_controls(sub, column):
                     layout.addWidget(control)
                     added += 1
             if not added:
@@ -1139,16 +1197,14 @@ class RibbonWidget(QWidget):
             button.triggered.connect(self._end_peek)
             return button
         action = self._resolve(item["name"])
-        if action is None:
+        if action is None or not action.isVisible():
             return None
         size = "small" if kind == "small" else "big"
-        label = item.get("label") or spec.COMMAND_LABELS.get(item["name"])
-        if label is None and item["name"].startswith(spec.PROPS):
-            label = spec.PROPERTY_PAGES[item["name"][len(spec.PROPS):]][0]
+        label = item.get("label") or self._label_for(item["name"])
         caption = tr(label) if label else clean_caption(action.text())
         if size == "small":
             caption = caption.replace("\n", " ")
-        icon = item.get("icon") or spec.COMMAND_ICONS.get(item["name"])
+        icon = item.get("icon") or self._icon_for(item["name"])
         button = RibbonButton(self._m, size, caption, theme_icon(icon), action, parent)
         if kind == "split":
             menu = self._build_menu(item["entries"], parent)
@@ -1158,15 +1214,19 @@ class RibbonWidget(QWidget):
         button.triggered.connect(self._end_peek)
         return button
 
+    def special_menu(self, entry, parent):
+        """Menus built by QRibbonSkin for a single special entry (subclasses)."""
+        return None
+
     def _build_menu(self, entries, parent):
         """A native QMenu (single "menu:" entry) or a menu of native actions."""
-        if len(entries) == 1 and entries[0] == spec.PLUGIN_TOOLBARS:
-            menu = QMenu(parent)
-            menu.aboutToShow.connect(lambda m=menu: self._fill_plugin_toolbars(m))
-            return menu
-        if len(entries) == 1 and entries[0].startswith("menu:"):
-            native = self._index.menu(entries[0][5:])
-            return None if native is None else self._deduplicated(native, parent)
+        if len(entries) == 1:
+            special = self.special_menu(entries[0], parent)
+            if special is not None:
+                return special
+            if entries[0].startswith("menu:"):
+                native = self._index.menu(entries[0][5:])
+                return None if native is None else self._deduplicated(native, parent)
         menu = QMenu(parent)
         pending_separator = False
         for entry in entries:
@@ -1178,63 +1238,13 @@ class RibbonWidget(QWidget):
                 target = native.menuAction() if native is not None else None
             else:
                 target = self._resolve(entry)
-            if target is None:
+            if target is None or not target.isVisible():
                 continue
             if pending_separator:
                 menu.addSeparator()
                 pending_separator = False
             menu.addAction(target)
         return menu if menu.actions() else None
-
-    def _fill_plugin_toolbars(self, menu):
-        """List the commands of third-party toolbars, read when opened."""
-        menu.clear()
-        for bar in self._window.findChildren(QToolBar):
-            if bar.parent() is not self._window or bar.objectName() in CORE_TOOLBARS:
-                continue
-            actions = [a for a in bar.actions() if not a.isSeparator()
-                       and (a.menu() is not None or clean_caption(a.text()))]
-            if not actions:
-                continue
-            sub = menu.addMenu(bar.windowTitle() or bar.objectName())
-            for action in actions:
-                sub.addAction(action)
-        if not menu.actions():
-            empty = menu.addAction(tr("Nenhuma barra de complementos"))
-            empty.setEnabled(False)
-
-    # --------------------------------------------------------- layer context
-    def _current_layer_kind(self):
-        try:
-            layer = self.iface.activeLayer()
-        except (AttributeError, RuntimeError):
-            return None
-        return self._kind_of(layer)
-
-    @staticmethod
-    def _kind_of(layer):
-        if layer is None:
-            return None
-        try:
-            from qgis.core import QgsRasterLayer, QgsVectorLayer
-        except ImportError:  # pragma: no cover
-            return "other"
-        if isinstance(layer, QgsVectorLayer):
-            return "vector"
-        if isinstance(layer, QgsRasterLayer):
-            return "raster"
-        return "other"
-
-    def _on_layer_changed(self, layer):
-        kind = self._kind_of(layer)
-        if kind == self._layer_kind:
-            return
-        self._layer_kind = kind
-        self._sync_layer_actions()
-        self._dirty.update(spec.LAYER_DEPENDENT_TABS)
-        current = self._tab_id(self.tabs.currentIndex())
-        if not self._project_active and current in spec.LAYER_DEPENDENT_TABS:
-            self.pages.setCurrentWidget(self._page(current))
 
     # -------------------------------------------------------------- collapse
     def _on_tab_clicked(self, index):
@@ -1318,8 +1328,165 @@ class RibbonWidget(QWidget):
         if menu_bar is not None:
             visit(menu_bar.actions())
         for bar in self._window.findChildren(QToolBar):
-            if bar.objectName() != "QRibbonSkinToolbar":
+            if not bar.objectName().startswith("QRibbonSkin"):
                 visit(bar.actions())
+
+    def release(self):
+        """Disconnect before the Ribbon is deleted."""
+        for shortcut in self._shortcuts:
+            try:
+                shortcut.setEnabled(False)
+            except RuntimeError:
+                pass
+        try:
+            self.spotlight.close()
+            self.spotlight.deleteLater()
+        except RuntimeError:
+            pass
+
+
+class RibbonWidget(RibbonFrame):
+    """The QGIS main-window Ribbon. Constructor signature kept for plugin.py."""
+
+    def __init__(self, iface, restore_action, focus_action, restore_panels_action, parent=None):
+        self.iface = iface
+        self._layer_kind = None
+        self._project_chrome_callback = None
+        restore_panels_action.triggered.connect(lambda _c=False: focus_action.setChecked(False))
+        own = {spec.CLASSIC: restore_action, spec.FOCUS_MAP: focus_action,
+               spec.RESTORE_PANELS: restore_panels_action}
+        super().__init__(iface.mainWindow(), spec, own, parent)
+        for action in (restore_action, focus_action, restore_panels_action):
+            action.setParent(self)
+        self._layer_kind = self._current_layer_kind()
+        self._sync_layer_actions()
+        try:
+            iface.currentLayerChanged.connect(self._on_layer_changed)
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+        self.start()
+
+    # ----------------------------------------------------------- own actions
+    def _make_own_actions(self):
+        super()._make_own_actions()
+        for page, (caption, icon, tip) in spec.PROPERTY_PAGES.items():
+            action = QAction(theme_icon(icon), tr(caption).replace("\n", " "), self)
+            action.setToolTip(tr(tip))
+            action.triggered.connect(lambda _c=False, p=page: self._show_properties(p))
+            self._own[spec.PROPS + page] = action
+        for name in spec.COMMAND_ICONS:
+            if name.startswith(spec.ALG):
+                alg = name[len(spec.ALG):]
+                self._add_own(name, lambda _c=False, a=alg: self._run_algorithm(a))
+        for name in (spec.CLASSIC, spec.FOCUS_MAP, spec.RESTORE_PANELS):
+            action = self._own[name]
+            if action.icon().isNull():
+                action.setIcon(theme_icon(spec.COMMAND_ICONS[name]))
+
+    def _label_for(self, name):
+        label = super()._label_for(name)
+        if label is None and name.startswith(spec.PROPS):
+            label = spec.PROPERTY_PAGES[name[len(spec.PROPS):]][0]
+        return label
+
+    def _show_properties(self, page):
+        """Native Layer Properties dialog, opened on ``page``."""
+        layer = self.iface.activeLayer()
+        if layer is not None:
+            self.iface.showLayerProperties(layer, page)
+
+    def _sync_layer_actions(self):
+        has_layer = self._layer_kind is not None
+        for page in spec.PROPERTY_PAGES:
+            self._own[spec.PROPS + page].setEnabled(has_layer)
+
+    def _run_algorithm(self, alg_id):
+        """Open a native Processing algorithm dialog (no algorithm is ours)."""
+        try:
+            try:
+                from qgis import processing
+            except ImportError:
+                import processing  # QGIS builds exposing the plugin module
+            processing.execAlgorithmDialog(alg_id)
+        except Exception as exc:  # Processing disabled or algorithm missing
+            from qgis.core import QgsMessageLog, Qgis
+            try:
+                self.iface.messageBar().pushMessage(
+                    "QRibbonSkin", tr("Algoritmo indisponível: {alg}").format(alg=alg_id),
+                    Qgis.MessageLevel.Warning, 5)
+            except Exception:
+                pass
+            QgsMessageLog.logMessage(str(exc), "QRibbonSkin", Qgis.MessageLevel.Warning)
+
+    # ------------------------------------------------------------ context
+    def visible_groups(self, tab_id):
+        return spec.visible_groups(tab_id, self._layer_kind)
+
+    def leading_groups(self, tab_id):
+        texts = {
+            "data": "Selecione uma camada no painel Camadas para ver suas ferramentas de dados.",
+            "style": "Selecione uma camada no painel Camadas para definir seu estilo.",
+            "labeling": "Selecione uma camada vetorial no painel Camadas para rotulá-la.",
+        }
+        if tab_id in spec.LAYER_DEPENDENT_TABS and self._layer_kind is None:
+            return [self.hint_group(texts[tab_id])]
+        return []
+
+    def special_menu(self, entry, parent):
+        if entry == spec.PLUGIN_TOOLBARS:
+            menu = QMenu(parent)
+            menu.aboutToShow.connect(lambda m=menu: self._fill_plugin_toolbars(m))
+            return menu
+        return None
+
+    def _fill_plugin_toolbars(self, menu):
+        """List the commands of third-party toolbars, read when opened."""
+        menu.clear()
+        for bar in self._window.findChildren(QToolBar):
+            if bar.parent() is not self._window or bar.objectName() in CORE_TOOLBARS:
+                continue
+            actions = [a for a in bar.actions() if not a.isSeparator()
+                       and (a.menu() is not None or clean_caption(a.text()))]
+            if not actions:
+                continue
+            sub = menu.addMenu(bar.windowTitle() or bar.objectName())
+            for action in actions:
+                sub.addAction(action)
+        if not menu.actions():
+            empty = menu.addAction(tr("Nenhuma barra de complementos"))
+            empty.setEnabled(False)
+
+    def _current_layer_kind(self):
+        try:
+            layer = self.iface.activeLayer()
+        except (AttributeError, RuntimeError):
+            return None
+        return self._kind_of(layer)
+
+    @staticmethod
+    def _kind_of(layer):
+        if layer is None:
+            return None
+        try:
+            from qgis.core import QgsRasterLayer, QgsVectorLayer
+        except ImportError:  # pragma: no cover
+            return "other"
+        if isinstance(layer, QgsVectorLayer):
+            return "vector"
+        if isinstance(layer, QgsRasterLayer):
+            return "raster"
+        return "other"
+
+    def _on_layer_changed(self, layer):
+        kind = self._kind_of(layer)
+        if kind == self._layer_kind:
+            return
+        self._layer_kind = kind
+        self._sync_layer_actions()
+        self._dirty.update(spec.LAYER_DEPENDENT_TABS)
+        current = self._tab_id(self.tabs.currentIndex())
+        if not self._project_active and current in spec.LAYER_DEPENDENT_TABS:
+            self.pages.setCurrentWidget(self._page(current))
 
     # ---------------------------------------------------- plugin.py contract
     def set_project_chrome_callback(self, callback):
@@ -1331,18 +1498,8 @@ class RibbonWidget(QWidget):
         self.release()
 
     def release(self):
-        """Disconnect from QGIS before the Ribbon is deleted."""
         try:
             self.iface.currentLayerChanged.disconnect(self._on_layer_changed)
         except (AttributeError, RuntimeError, TypeError):
             pass
-        for shortcut in self._shortcuts:
-            try:
-                shortcut.setEnabled(False)
-            except RuntimeError:
-                pass
-        try:
-            self.spotlight.close()
-            self.spotlight.deleteLater()
-        except RuntimeError:
-            pass
+        super().release()

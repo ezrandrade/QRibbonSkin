@@ -1,4 +1,4 @@
-# QRibbonSkin 1.2.4
+# QRibbonSkin 1.3.0
 
 O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, e a **página inicial original do QGIS** é preservada.
 
@@ -15,7 +15,7 @@ O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **m
 - Atalhos de teclado nativos continuam funcionando com a barra de menus oculta.
 - Sem redundâncias: dentro de uma guia nenhum comando aparece duas vezes (os menus nativos usados como botões suspensos omitem o que já tem botão na guia); entre guias, só as repetições que o RustGIS também faz (tabela de atributos, seleção por atributos/localização e Exibir › Janelas espelhando os painéis). A guia Complementos mostra só o gerenciador e o conteúdo dos complementos instalados.
 - Georreferenciador sempre visível na guia **Dados** (grupo Alinhamento).
-- Leve: sem timers nem filtros de eventos globais na Ribbon; guias montadas sob demanda.
+- Leve: sem temporizadores e sem filtros de eventos globais; janelas detectadas por sinais do QGIS, mudança de foco e criação de barras; guias montadas sob demanda.
 - Retorno à interface clássica (Configurações → Interface clássica, ou Ctrl+Alt+Shift+R) e recuperação de barras e painéis.
 
 Ícones: usados os do tema do QGIS (`QgsApplication.getThemeIcon`). Apenas os comandos próprios do complemento sem equivalente no QGIS (Interface clássica, Mapa em foco) usam ícones novos, desenhados na grade 24×24 e na paleta dos ícones do QGIS (`resources/icons/qgis_style`).
@@ -49,14 +49,14 @@ Consulte `LICENSE` e `ATTRIBUTION.md`. A implementação contém trabalho deriva
 Para publicação no repositório oficial de plugins do QGIS, será necessário vincular uma página pública do projeto, um repositório de código-fonte e um rastreador de problemas. Esses endereços não foram definidos neste pacote; não são inventados nos metadados.
 
 
-### Designer de Modelos / Model Designer (v1.1.24 experimental)
+### Janelas de edição / Editor windows (v1.3.0)
 
-A interface do Designer de Modelos utiliza o mesmo padrão de Ribbon compacta (124 px),
-botões principais e menus suspensos das janelas Georreferenciador e Compositor de Layout.
-A busca contextual pode ser aberta com **Alt+Q**. O modelo, as ferramentas de
-processamento e os painéis permanecem nativos do QGIS. Esta integração precisa
-de validação funcional no QGIS 4.x antes de ser considerada homologada.
+O **Compositor de Layout**, o **Georreferenciador** e o **Designer de Modelos** recebem a mesma Ribbon da janela principal: mesmo componente, ícones nativos em 24 px, cores do tema do QGIS, Spotlight (**Alt+Q**) e a mesma regra contra redundâncias. Cada janela tem seu botão no estilo "Projeto" (**Layout**, **Arquivo**, **Modelo**).
 
-**English:** The Processing Model Designer now has an experimental compact Ribbon,
-native QAction commands and contextual **Alt+Q** search. Model data and
-processing behavior remain QGIS-owned. Functional testing is still required.
+- **Layout:** a guia Início segue os grupos de layout do RustGIS (Página, Quadros de mapa, Elementos de mapa, Formas, Texto e imagens, Exportar). Os botões de inserir itens vêm do registro de itens do QGIS e são classificados pelo tipo do item, com os nomes traduzidos pelo próprio QGIS. As guias **Atlas** e **Relatório** aparecem conforme o tipo de documento aberto.
+- **Georreferenciador:** pontos de controle, transformação e navegação na guia Início; vínculo com o QGIS e realce em Exibir.
+- **Designer de Modelos:** a ordem segue a barra do ModelBuilder do RustGIS (executar, editar, organizar, navegar).
+
+As barras e menus originais de cada janela ficam apenas ocultos (**Configurações → Barras nativas** os mostra novamente) e são restaurados ao fechar a janela ou desativar o QRibbonSkin; nenhuma ação é removida delas e nenhum painel é estilizado.
+
+**English:** the Layout Designer, Georeferencer and Model Designer share the main window's Ribbon component (native icons, theme colours, Alt+Q Spotlight). Native toolbars are only hidden and are restored on close; nothing is removed from them.

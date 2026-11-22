@@ -20,10 +20,7 @@ from qgis.PyQt.QtWidgets import QApplication, QToolBar, QDockWidget
 
 from .i18n import configure_language, tr
 from .ribbon import RibbonWidget
-from .panel_style import PanelLightTheme
-from .layout_designer import LayoutDesignerManager
-from .georeferencer import GeoreferencerManager
-from .model_designer import ModelDesignerManager
+from .editors import LayoutDesignerManager, GeoreferencerManager, ModelDesignerManager
 
 
 ROOT = Path(__file__).resolve().parent
@@ -80,9 +77,9 @@ class QRibbonSkinPlugin(QObject):
         self._restore_epoch = 0
         self._ribbon_bar = None
         self._toolbar_visibility = []
-        self._toolbar_monitor = QTimer(self)
-        self._toolbar_monitor.setInterval(1200)
-        self._toolbar_monitor.timeout.connect(self._sync_native_toolbars)
+        # v1.3: toolbars added later (e.g. by a plugin) are detected through
+        # the main window's ChildAdded event instead of a 1.2 s polling timer.
+        self._toolbar_sync_pending = False
         self._dock_visibility = []
         self._focus_map = False
         self._is_active = False
@@ -92,7 +89,6 @@ class QRibbonSkinPlugin(QObject):
         self._view_menu = None
         self._shortcut = None
         self._legacy_plugin_menu = False
-        self._panel_light_theme = PanelLightTheme(iface)
         self._layout_manager = LayoutDesignerManager(iface, self)
         self._georeferencer_manager = GeoreferencerManager(iface, self)
         self._model_designer_manager = ModelDesignerManager(iface, self)
@@ -180,7 +176,15 @@ class QRibbonSkinPlugin(QObject):
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched is self._window and not self._unloaded:
-            if event.type() == QEvent.Type.Close:
+            if (event.type() == QEvent.Type.ChildAdded and self._is_active
+                    and not self._toolbar_sync_pending
+                    and event.child().isWidgetType()):
+                # A direct child widget (toolbar, dock, ...) was added. At this
+                # point Qt is still constructing it, so its final type is only
+                # known later: check toolbars once the event loop resumes.
+                self._toolbar_sync_pending = True
+                QTimer.singleShot(0, self._deferred_toolbar_sync)
+            elif event.type() == QEvent.Type.Close:
                 # This runs BEFORE QGIS's QMainWindow.closeEvent/saveState.
                 # Keep the user's start-with-Ribbon preference for next launch.
                 self._closing = True
@@ -286,6 +290,10 @@ class QRibbonSkinPlugin(QObject):
         return [bar for bar in win.findChildren(QToolBar)
                 if bar.parent() is win
                 and bar.objectName() != "QRibbonSkinToolbar"]
+
+    def _deferred_toolbar_sync(self):
+        self._toolbar_sync_pending = False
+        self._sync_native_toolbars()
 
     def _sync_native_toolbars(self):
         """Track QGIS/plugin toolbars created after Ribbon activation.
@@ -605,7 +613,6 @@ class QRibbonSkinPlugin(QObject):
         # Only after the complete Ribbon (including Interface -> classic QGIS)
         # exists may the native menu bar be hidden.
         self._native_menu_bar.hide()
-        self._toolbar_monitor.start()
         # Changing styles can make QGIS re-show a dock (notably Browser).
         # Keep precisely the user's panel visibility snapshot from activation.
         self._preserve_initial_docks()
@@ -725,7 +732,6 @@ class QRibbonSkinPlugin(QObject):
         win = self.iface.mainWindow()
         # Capture bars added since the last monitor tick before restoring UI.
         self._sync_native_toolbars()
-        self._toolbar_monitor.stop()
         # Restore every auxiliary native editor before the main QGIS toolbar.
         try:
             self._georeferencer_manager.stop()
@@ -740,11 +746,6 @@ class QRibbonSkinPlugin(QObject):
         try:
             self._layout_manager.stop()
         except (RuntimeError, TypeError, AttributeError):
-            pass
-        # Stop panel decoration first, even when Ribbon teardown is partial.
-        try:
-            self._panel_light_theme.stop()
-        except (RuntimeError, TypeError):
             pass
         bar = self._ribbon_bar
         self._ribbon_bar = None
@@ -821,7 +822,6 @@ class QRibbonSkinPlugin(QObject):
                 self._layout_manager.stop()
             except (RuntimeError, TypeError, AttributeError):
                 pass
-            self._toolbar_monitor.stop()
             self._unloaded = True
             try:
                 self._window.removeEventFilter(self)
