@@ -706,6 +706,7 @@ class RibbonWidget(QWidget):
         self._collapsed = False
         self._peek = False
         self._project_active = False
+        self._claimed = set()
         self._project_chrome_callback = None
         for action in (restore_action, focus_action, restore_panels_action):
             action.setParent(self)
@@ -730,6 +731,7 @@ class RibbonWidget(QWidget):
         self.spotlight = Spotlight(self._window)
 
         self._layer_kind = self._current_layer_kind()
+        self._sync_layer_actions()
         try:
             iface.currentLayerChanged.connect(self._on_layer_changed)
         except (AttributeError, RuntimeError, TypeError):
@@ -760,6 +762,11 @@ class RibbonWidget(QWidget):
 
         add(spec.COMMAND_SEARCH, lambda _c=False: self.open_spotlight())
         add(spec.TOGGLE_RIBBON, lambda _c=False: self.toggle_collapsed())
+        for page, (caption, icon, tip) in spec.PROPERTY_PAGES.items():
+            action = QAction(theme_icon(icon), tr(caption).replace("\n", " "), self)
+            action.setToolTip(tr(tip))
+            action.triggered.connect(lambda _c=False, p=page: self._show_properties(p))
+            self._own[spec.PROPS + page] = action
         for name in spec.COMMAND_ICONS:
             if name.startswith(spec.ALG):
                 alg = name[len(spec.ALG):]
@@ -768,6 +775,17 @@ class RibbonWidget(QWidget):
             action = self._own[name]
             if action.icon().isNull():
                 action.setIcon(theme_icon(spec.COMMAND_ICONS[name]))
+
+    def _show_properties(self, page):
+        """Native Layer Properties dialog, opened on ``page``."""
+        layer = self.iface.activeLayer()
+        if layer is not None:
+            self.iface.showLayerProperties(layer, page)
+
+    def _sync_layer_actions(self):
+        has_layer = self._layer_kind is not None
+        for page in spec.PROPERTY_PAGES:
+            self._own[spec.PROPS + page].setEnabled(has_layer)
 
     def _run_algorithm(self, alg_id):
         """Open a native Processing algorithm dialog (no algorithm is ours)."""
@@ -898,7 +916,13 @@ class RibbonWidget(QWidget):
 
     def _build_page(self, tab_id, old=None):
         page = RibbonPage(self.pages)
-        for grp in spec.visible_groups(tab_id, self._layer_kind):
+        groups = spec.visible_groups(tab_id, self._layer_kind)
+        if tab_id in spec.GLOBAL_DEDUP_TABS:
+            everywhere = [g for t in spec.GROUPS.values() for g in t]
+            self._claimed = self._claimed_actions(everywhere)
+        else:
+            self._claimed = self._claimed_actions(groups)
+        for grp in groups:
             widget = self._build_group(grp)
             if widget is not None:
                 page.add_group(widget)
@@ -932,6 +956,58 @@ class RibbonWidget(QWidget):
         label.setPalette(pal)
         grp.add(label)
         return grp
+
+    def _claimed_actions(self, groups):
+        """QActions that have their own control on this tab: buttons and
+        entries of curated menus. Native dropdowns on the same tab omit them,
+        so no command appears twice in one tab (RustGIS rule)."""
+        claimed = set()
+        for grp in groups:
+            stack = list(grp["items"])
+            while stack:
+                item = stack.pop(0)
+                if item["kind"] == "col":
+                    stack[:0] = item["items"]
+                    continue
+                names = [item["name"]] if "name" in item else []
+                entries = item.get("entries", ())
+                if not (len(entries) == 1 and entries[0].startswith("menu:")):
+                    names += [e for e in entries if e != "-" and not e.startswith("menu:")]
+                for name in names:
+                    action = self._resolve(name)
+                    if action is not None:
+                        claimed.add(action)
+        return claimed
+
+    def _deduplicated(self, native, parent):
+        """Show ``native`` without the actions claimed by this tab, or the
+        native QMenu itself when nothing overlaps. The proxy is refilled from
+        the live native menu each time it opens (plugin entries included);
+        actions and submenus are referenced, never copied."""
+        claimed = frozenset(self._claimed)
+        if not any(a in claimed for a in native.actions()):
+            return native
+        proxy = QMenu(native.title(), parent)
+
+        def refill():
+            proxy.clear()
+            pending = False
+            for action in native.actions():
+                if action.isSeparator():
+                    pending = bool(proxy.actions())
+                    continue
+                if action in claimed or not action.isVisible():
+                    continue
+                if pending:
+                    proxy.addSeparator()
+                    pending = False
+                proxy.addAction(action)
+            if not proxy.actions():
+                empty = proxy.addAction(tr("Nenhum comando adicional"))
+                empty.setEnabled(False)
+
+        proxy.aboutToShow.connect(refill)
+        return proxy
 
     def _build_group(self, grp):
         widget = RibbonGroup(self._m, tr(grp["title"]))
@@ -981,6 +1057,8 @@ class RibbonWidget(QWidget):
             return None
         size = "small" if kind == "small" else "big"
         label = item.get("label") or spec.COMMAND_LABELS.get(item["name"])
+        if label is None and item["name"].startswith(spec.PROPS):
+            label = spec.PROPERTY_PAGES[item["name"][len(spec.PROPS):]][0]
         caption = tr(label) if label else clean_caption(action.text())
         if size == "small":
             caption = caption.replace("\n", " ")
@@ -1001,7 +1079,8 @@ class RibbonWidget(QWidget):
             menu.aboutToShow.connect(lambda m=menu: self._fill_plugin_toolbars(m))
             return menu
         if len(entries) == 1 and entries[0].startswith("menu:"):
-            return self._index.menu(entries[0][5:])
+            native = self._index.menu(entries[0][5:])
+            return None if native is None else self._deduplicated(native, parent)
         menu = QMenu(parent)
         pending_separator = False
         for entry in entries:
@@ -1065,6 +1144,7 @@ class RibbonWidget(QWidget):
         if kind == self._layer_kind:
             return
         self._layer_kind = kind
+        self._sync_layer_actions()
         self._dirty.update(spec.LAYER_DEPENDENT_TABS)
         current = self._tab_id(self.tabs.currentIndex())
         if not self._project_active and current in spec.LAYER_DEPENDENT_TABS:

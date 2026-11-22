@@ -338,3 +338,15 @@ EN.update({
     'Reverter': 'Revert', 'Fechar': 'Close', 'Sair do QGIS': 'Exit QGIS',
     'Novo': 'New', 'Abrir': 'Open', 'Salvar\ncomo': 'Save\nAs',
 })
+
+# QRibbonSkin 1.2.2: redundancy review.
+EN.update({
+    'Campos': 'Fields', 'Junções': 'Joins', 'Histograma': 'Histogram',
+    'Alinhamento': 'Alignment', 'Calculadoras': 'Calculators',
+    'Mais\nferramentas': 'More\nTools', 'Nenhum comando adicional': 'No additional commands',
+    'Campos da camada (Propriedades da camada › Campos)': 'Layer fields (Layer Properties › Fields)',
+    'Junções de tabelas (Propriedades da camada › Junções)': 'Table joins (Layer Properties › Joins)',
+    'Informações do raster (Propriedades da camada › Informações)': 'Raster information (Layer Properties › Information)',
+    'Histograma do raster (Propriedades da camada › Histograma)': 'Raster histogram (Layer Properties › Histogram)',
+    'Propriedades da camada (página Simbologia)': 'Layer properties (Symbology page)',
+})

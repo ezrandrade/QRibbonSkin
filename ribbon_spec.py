@@ -70,6 +70,23 @@ COMMAND_SEARCH = PLUGIN + "command_search"
 TOGGLE_RIBBON = PLUGIN + "toggle_ribbon"
 # Processing algorithm dialogs (native QGIS algorithms, native dialogs).
 ALG = "alg:"
+# Native Layer Properties dialog opened on one page (iface.showLayerProperties).
+PROPS = "props:"
+# (page objectName, caption, icon, tooltip) — page names come from QGIS's
+# qgsvectorlayerpropertiesbase.ui / qgsrasterlayerpropertiesbase.ui; QGIS
+# opens its default page when a name is unknown, so nothing breaks.
+PROPERTY_PAGES = {
+    "mOptsPage_SourceFields": ("Campos", "/propertyicons/sourcefieldsandforms.svg",
+                               "Campos da camada (Propriedades da camada › Campos)"),
+    "mOptsPage_Joins": ("Junções", "/propertyicons/join.svg",
+                        "Junções de tabelas (Propriedades da camada › Junções)"),
+    "mOptsPage_Information": ("Informações\ndo raster", "/propertyicons/metadata.svg",
+                              "Informações do raster (Propriedades da camada › Informações)"),
+    "mOptsPage_Histogram": ("Histograma", "/propertyicons/histogram.svg",
+                            "Histograma do raster (Propriedades da camada › Histograma)"),
+    "mOptsPage_Style": ("Propriedades", "/propertyicons/system.svg",
+                        "Propriedades da camada (página Simbologia)"),
+}
 
 # Docks whose toggle QAction is looked up by objectName first and, when a
 # build lacks that QAction, through QDockWidget.toggleViewAction().
@@ -139,6 +156,10 @@ TABS = (
     ("help", "Ajuda"),
 )
 
+# Tabs that hold only *extra* content (RustGIS: Plugins shows plugin content):
+# their native dropdowns omit commands with a button on any tab.
+GLOBAL_DEDUP_TABS = ("plugins", "settings")
+
 # Tabs whose groups depend on the layer selected in the Layers panel.
 LAYER_DEPENDENT_TABS = ("data", "style", "labeling")
 
@@ -147,12 +168,19 @@ LAYER_DEPENDENT_TABS = ("data", "style", "labeling")
 # QGIS welcome page in the map area is never replaced.
 PROJECT_TAB = "project"
 
+# Redundancy rules (checked by an automated audit, as RustGIS does it):
+# 1. Inside one tab a command appears once. Native menus used as dropdowns
+#    are shown *without* the commands that already have a button on the same
+#    tab (see the Ribbon's de-duplicated menu proxy).
+# 2. Across tabs, only the repetitions RustGIS also makes: attribute table,
+#    selection by attributes/location, clear selection, and View › Windows
+#    mirroring the panels used on other tabs.
+# 3. The Plugins tab manages plugins once and shows only plugin content.
 GROUPS = {
     PROJECT_TAB: (
         group("Projeto",
               big("mActionNewProject", "Novo"),
-              split("mActionOpenProject", ("mActionOpenProject", "-",
-                                           "menu:mRecentProjectsMenu"), "Abrir"),
+              big("mActionOpenProject", "Abrir"),
               big("mActionSaveProject", "Salvar"),
               big("mActionSaveProjectAs", "Salvar\ncomo")),
         group("Recentes e modelos",
@@ -163,14 +191,6 @@ GROUPS = {
         group("Armazenamento",
               menu("Abrir de", "/mIconFolder24.svg", ("menu:mProjectFromStorageMenu",)),
               menu("Salvar em", "/mActionFileSaveAs.svg", ("menu:mProjectToStorageMenu",))),
-        group("Layouts",
-              big("mActionNewPrintLayout", "Novo\nlayout"),
-              big("mActionShowLayoutManager", "Gerenciador\nde layouts"),
-              menu("Layouts", "/mActionComposerManager.svg", ("menu:mLayoutsMenu",))),
-        group("Importar e exportar",
-              menu("Importar/\nexportar", "/mActionSharing.svg", ("menu:menuImport_Export",)),
-              col(small("mActionDxfExport", "Exportar DXF", "/mActionSharingExport.svg"),
-                  small("mActionDwgImport", "Importar DWG/DXF", "/mActionSharingImport.svg"))),
         group("Projeto atual",
               big("mActionProjectProperties", "Propriedades"),
               col(small("mActionRevertProject", "Reverter", "/mActionReload.svg"),
@@ -180,37 +200,30 @@ GROUPS = {
     "home": (
         group("Projeto",
               big("mActionNewMapCanvas", "Nova vista\nde mapa"),
-              split("mActionNewPrintLayout",
-                    ("mActionNewPrintLayout", "mActionNewReport", "-",
-                     "mActionShowLayoutManager", "menu:mLayoutsMenu"),
-                    "Novo\nlayout")),
+              big("mActionNewPrintLayout", "Novo\nlayout")),
         group("Navegar",
               big("mActionPan", "Mover\nmapa"),
               menu("Favoritos", "/mActionShowBookmarks.svg",
-                   ("mActionNewBookmark", "mActionShowBookmarks",
-                    "mActionShowBookmarkManager")),
+                   ("mActionNewBookmark", "mActionShowBookmarkManager")),
               col(small("mActionZoomFullExtent", "Extensão total"),
                   small("mActionZoomIn", "Aproximar"),
                   small("mActionZoomOut", "Afastar")),
               col(small("mActionZoomLast", "Anterior"),
                   small("mActionZoomNext", "Próxima"),
-                  small("mActionZoomToLayers", "Zoom na camada")),
+                  small("mActionPanToSelected", "Centralizar seleção")),
               col(small("mActionIdentify", "Identificar"),
-                  small("mActionMapTips", "Dicas de mapa"),
                   small("mActionDraw", "Atualizar"))),
         group("Adicionar",
               menu("Mapa\nbase", "/mActionAddXyzLayer.svg",
-                   ("mActionAddXyzLayer", "mActionAddVectorTileLayer",
-                    "mActionAddWmsLayer", "mActionAddAfsLayer")),
+                   ("mActionAddXyzLayer", "mActionAddVectorTileLayer")),
               split("mActionDataSourceManager", ("menu:mAddLayerMenu",),
                     "Adicionar\ndados"),
               menu("Nova\ncamada", "/mActionNewVectorLayer.svg",
                    ("menu:mNewLayerMenu",)),
               menu("Dados\nweb", "/mIconWms.svg",
                    ("mActionAddWmsLayer", "mActionAddWfsLayer",
-                    "mActionAddWcsLayer", "mActionAddXyzLayer",
-                    "mActionAddVectorTileLayer", "mActionAddAfsLayer",
-                    "mActionAddPointCloudLayer", "mActionAddStacLayer"))),
+                    "mActionAddWcsLayer", "mActionAddAfsLayer",
+                    "mActionAddStacLayer"))),
         group("Seleção",
               split("mActionSelectFeatures",
                     ("mActionSelectFeatures", "mActionSelectPolygon",
@@ -233,12 +246,12 @@ GROUPS = {
     ),
     "data": (
         group("Fonte de dados",
-              big("mActionDataSourceManager", "Fontes de\ndados"),
               col(small("mActionAddLayerDefinition", "Definição de camada",
                         "/mActionAddLayer.svg"),
                   small("mActionEmbedLayers", "Incorporar camadas",
-                        "/mActionAddGroup.svg"),
-                  small("mActionDraw", "Recarregar"))),
+                        "/mActionAddGroup.svg"))),
+        group("Alinhamento",
+              big("mActionShowGeoreferencer", "Georreferen-\nciador")),
         group("Filtro",
               big("mActionLayerSubsetString", "Consulta de\ndefinição",
                   "/mIconExpressionFilter.svg"), when="vector"),
@@ -253,27 +266,18 @@ GROUPS = {
                   small("mActionDeselectActiveLayer", "Limpar")),
               big(ALG + "native:saveselectedfeatures"), when="vector"),
         group("Estrutura de dados",
-              big("mActionLayerProperties", "Campos",
-                  "/propertyicons/sourcefieldsandforms.svg"),
-              big("mActionOpenFieldCalc", "Calcular"),
-              col(small("mActionMultiEditAttributes", "Editar atributos"),
-                  small("mActionStatisticalSummary", "Estatísticas")),
-              when="vector"),
+              big(PROPS + "mOptsPage_SourceFields"),
+              big(PROPS + "mOptsPage_Joins"),
+              big("mActionOpenFieldCalc", "Calcular"), when="vector"),
         group("Informações",
-              big("mActionLayerProperties", "Informações\ndo raster",
-                  "/propertyicons/metadata.svg"),
-              big("mActionShowRasterCalculator", "Calculadora\nraster"),
-              big("mActionShowGeoreferencer", "Georreferen-\nciador"),
-              when="raster"),
+              big(PROPS + "mOptsPage_Information"),
+              big(PROPS + "mOptsPage_Histogram"), when="raster"),
         group("Camada",
               col(small("mActionDuplicateLayer", "Duplicar"),
-                  small("mActionRemoveLayer", "Remover"),
                   small("mActionSetLayerCRS", "Definir SRC",
-                        "/propertyicons/CRS.svg")),
-              col(small("mActionSetProjectCRSFromLayer", "SRC do projeto",
-                        "/mActionSetProjection.svg"),
-                  small("mActionSetLayerScaleVisibility", "Escala visível",
-                        "/mActionViewScaleInCanvas.svg")),
+                        "/propertyicons/CRS.svg"),
+                  small("mActionSetProjectCRSFromLayer", "SRC do projeto",
+                        "/mActionSetProjection.svg")),
               when="layer"),
         group("Exportar",
               big("mActionLayerSaveAs", "Exportar\ncamada", "/mActionFileSaveAs.svg"),
@@ -285,8 +289,7 @@ GROUPS = {
         group("Desenho",
               big("ShowLayerStylingPanel", "Simbologia",
                   "/propertyicons/symbology.svg"),
-              big("mActionLayerProperties", "Propriedades",
-                  "/propertyicons/system.svg"), when="layer"),
+              big(PROPS + "mOptsPage_Style"), when="layer"),
         group("Camada",
               big("mActionZoomToLayers", "Zoom na\ncamada"),
               col(small("mActionOpenTable", "Tabela de atributos"),
@@ -374,7 +377,7 @@ GROUPS = {
               col(small("mActionOffsetCurve", "Deslocar curva"),
                   small("mActionSimplifyFeature", "Simplificar"),
                   small("mActionTrimExtendFeature", "Aparar/estender")),
-              menu("Ferramentas\nde edição", "/mActionMultiEdit.svg",
+              menu("Mais\nferramentas", "/mActionMultiEdit.svg",
                    ("menu:mMenuEditGeometry",))),
         group("Anotações",
               menu("Anotação", "/mActionAnnotation.svg",
@@ -394,10 +397,9 @@ GROUPS = {
               menu("Malha", "/mActionAddMeshLayer.svg", ("menu:mMeshMenu",)),
               menu("Banco de\ndados", "/propertyicons/database.svg",
                    ("menu:mDatabaseMenu",))),
-        group("Raster",
+        group("Calculadoras",
               col(small("mActionShowRasterCalculator", "Calculadora raster"),
-                  small("mActionShowMeshCalculator", "Calculadora de malha"),
-                  small("mActionShowGeoreferencer", "Georreferenciador"))),
+                  small("mActionShowMeshCalculator", "Calculadora de malha"))),
         group("Seleção",
               big("mActionSelectByExpression", "Por\natributos"),
               big(ALG + "native:selectbylocation", "Por\nlocalização")),
@@ -413,9 +415,8 @@ GROUPS = {
         group("Exibição",
               menu("Decorações", "/grid.svg", ("menu:mMenuDecorations",)),
               col(small("mActionMapTips", "Dicas de mapa"),
-                  small("mActionDraw", "Atualizar"))),
+                  small("mActionZoomActualSize", "Resolução nativa"))),
         group("Vista",
-              big("mActionNewMapCanvas", "Nova vista\n2D"),
               menu("3D", "/mActionNew3DMap.svg",
                    ("mActionNew3DMapCanvas", "mActionNew3DMapCanvasGlobe",
                     "mActionManage3DMapViews"))),
@@ -438,10 +439,6 @@ GROUPS = {
                         "/mActionInOverview.svg"),
                   small("dock:MessageLog", "Mensagens", "/mMessageLog.svg")),
               menu("Painéis", "/mDockify.svg", ("menu:mPanelMenu",))),
-        group("Navegação",
-              big("mActionZoomFullExtent", "Mundo"),
-              col(small("mActionZoomActualSize", "Resolução nativa"),
-                  small("mActionPanToSelected", "Centralizar seleção"))),
         group("Tempo",
               big("mActionTemporalController", "Controle\ntemporal",
                   "/propertyicons/temporal.svg")),
@@ -451,7 +448,6 @@ GROUPS = {
     ),
     "publish": (
         group("Layout",
-              big("mActionNewPrintLayout", "Novo\nlayout"),
               big("mActionShowLayoutManager", "Gerenciador\nde layouts"),
               menu("Layouts", "/mActionComposerManager.svg",
                    ("menu:mLayoutsMenu",))),
@@ -463,29 +459,13 @@ GROUPS = {
               col(small("mActionDxfExport", "Exportar DXF", "/mActionSharingExport.svg"),
                   small("mActionDwgImport", "Importar DWG/DXF",
                         "/mActionSharingImport.svg"))),
-        group("Exportar dados",
-              big("mActionLayerSaveAs", "Exportar\nfeições", "/mActionFileSaveAs.svg"),
-              col(small("mActionSaveLayerDefinition", "Definição de camada",
-                        "/mActionFileSave.svg"))),
-        group("Salvar como",
-              big("mActionSaveProjectAs", "Projeto"),
-              menu("Armazenamento", "/mIconFolder24.svg",
-                   ("menu:mProjectToStorageMenu",)),
-              col(small("mActionProjectProperties", "Propriedades do projeto"))),
     ),
     "plugins": (
         group("Complementos",
-              big("mActionManagePlugins", "Gerenciar\ncomplementos"),
-              col(small("mActionShowPythonDialog", "Console Python"))),
+              big("mActionManagePlugins", "Gerenciar\ncomplementos")),
         group("Menus de complementos",
               menu("Complementos", "/propertyicons/plugins.svg", ("menu:mPluginMenu",)),
-              menu("Vetor", "/mActionAddOgrLayer.svg", ("menu:mVectorMenu",)),
-              menu("Raster", "/mActionAddRasterLayer.svg", ("menu:mRasterMenu",)),
-              menu("Banco de\ndados", "/propertyicons/database.svg",
-                   ("menu:mDatabaseMenu",)),
-              menu("Web", "/mIconWms.svg", ("menu:mWebMenu",)),
-              menu("Processamento", "/processingAlgorithm.svg",
-                   ("menu:mProcessingMenu",))),
+              menu("Web", "/mIconWms.svg", ("menu:mWebMenu",))),
         group("Barras",
               menu(COMMAND_LABELS[PLUGIN_TOOLBARS], COMMAND_ICONS[PLUGIN_TOOLBARS],
                    (PLUGIN_TOOLBARS,))),
@@ -501,12 +481,9 @@ GROUPS = {
               big("mActionCustomProjection", "Projeções\npersonalizadas")),
         group("Perfis",
               menu("Perfis de\nusuário", "/user.svg", ("menu:mUserProfileMenu",))),
-        group("Estilos",
-              big("mActionStyleManager", "Gerenciador\nde estilos")),
         group("QRibbonSkin",
               big(CLASSIC),
-              col(small(RESTORE_PANELS),
-                  small(TOGGLE_RIBBON, "Recolher a Ribbon", "qrs:chevron_up.svg"))),
+              col(small(TOGGLE_RIBBON, "Recolher a Ribbon", "qrs:chevron_up.svg"))),
         group("Mais",
               menu("Configurações", "/propertyicons/settings.svg",
                    ("menu:mSettingsMenu",))),
@@ -552,6 +529,7 @@ def iter_names(groups=None):
 
 def iter_icons():
     """Every icon path referenced by the spec."""
+    yield from (page[1] for page in PROPERTY_PAGES.values())
     for tab_groups in GROUPS.values():
         for grp in tab_groups:
             stack = list(grp["items"])

@@ -1,4 +1,4 @@
-# QRibbonSkin 1.2.1
+# QRibbonSkin 1.2.2
 
 O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, e a **página inicial original do QGIS** é preservada.
 
@@ -13,6 +13,8 @@ O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **m
 - O botão **Projeto** mostra na própria Ribbon os comandos nativos de projeto (novo, abrir, recentes, modelos, armazenamento, layouts, importar/exportar, propriedades): a página inicial do QGIS não é substituída.
 - Ícones grandes em 24 px e pequenos em 16 px, os tamanhos para os quais o tema do QGIS os desenha; alturas derivadas da fonte da interface.
 - Atalhos de teclado nativos continuam funcionando com a barra de menus oculta.
+- Sem redundâncias: dentro de uma guia nenhum comando aparece duas vezes (os menus nativos usados como botões suspensos omitem o que já tem botão na guia); entre guias, só as repetições que o RustGIS também faz (tabela de atributos, seleção por atributos/localização e Exibir › Janelas espelhando os painéis). A guia Complementos mostra só o gerenciador e o conteúdo dos complementos instalados.
+- Georreferenciador sempre visível na guia **Dados** (grupo Alinhamento).
 - Leve: sem timers nem filtros de eventos globais na Ribbon; guias montadas sob demanda.
 - Retorno à interface clássica (Configurações → Interface clássica, ou Ctrl+Alt+Shift+R) e recuperação de barras e painéis.
 
