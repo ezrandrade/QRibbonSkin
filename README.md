@@ -23,11 +23,15 @@ O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **m
 
 ## Compatibilidade verificada
 
-| Sistema | QGIS | Resultado |
-|---|---|---|
-| Windows 10 | 4.0 | Homologado |
-| Windows 11 26H2 | 4.2.2 | Homologado |
-| Ubuntu Linux 26.04 (Flatpak) | 4.2.3 | Homologado |
+| Versão do QRibbonSkin | Sistema | QGIS | Resultado |
+|---|---|---|---|
+| 1.4.3 | Windows 11 | 4.2.x | Homologado |
+| 1.4.3 | Ubuntu Linux (Flatpak) | 4.2.x | Homologado |
+| 1.1.44 | Windows 10 | 4.0 | Homologado |
+| 1.1.44 | Windows 11 26H2 | 4.2.2 | Homologado |
+| 1.1.44 | Ubuntu Linux 26.04 (Flatpak) | 4.2.3 | Homologado |
+
+A versão 1.4.3 não foi testada no Windows 10 com QGIS 4.0.
 
 Essas validações foram comunicadas pelo responsável pelos testes; não constituem garantia de compatibilidade com todas as configurações do QGIS.
 
@@ -47,7 +51,7 @@ Consulte `LICENSE` e `ATTRIBUTION.md`. A arquitetura reversível foi inspirada n
 
 ## Código-fonte, suporte e publicação
 
-Para publicação no repositório oficial de plugins do QGIS, será necessário vincular uma página pública do projeto, um repositório de código-fonte e um rastreador de problemas. Esses endereços não foram definidos neste pacote; não são inventados nos metadados.
+Código-fonte e rastreador de problemas: https://github.com/ezrandrade/QRibbonSkin (endereços declarados em `metadata.txt`).
 
 
 ### Janelas de edição / Editor windows (v1.3.0)
