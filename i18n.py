@@ -402,3 +402,4 @@ EN.update({
 
 # QRibbonSkin 1.4.1: one button per plugin.
 EN.update({'Mostrar barra de ferramentas': 'Show toolbar'})
+EN.update({'Limpar\nseleção': 'Clear\nSelection'})

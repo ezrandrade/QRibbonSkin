@@ -182,7 +182,8 @@ PROJECT_BUTTON = ("Projeto", "Abrir, salvar e criar projetos")
 # 2. Across tabs, only commands that serve the other tab's work: the
 #    repetitions RustGIS makes (attribute table, selection by attributes/
 #    location, View › Windows mirroring the panels used on other tabs) and
-#    the Select tool on Edit, since editing acts on the selected features
+#    the Select and Clear Selection tools on Edit, since editing acts on the
+#    selected features
 #    (ArcGIS Pro, RustGIS's model, has it there too).
 # 3. The Plugins tab manages plugins once and shows only plugin content.
 GROUPS = {
@@ -366,7 +367,8 @@ GROUPS = {
               split("mActionSelectFeatures",
                     ("mActionSelectFeatures", "mActionSelectPolygon",
                      "mActionSelectFreehand", "mActionSelectRadius"),
-                    "Selecionar")),
+                    "Selecionar"),
+              big("mActionDeselectAll", "Limpar\nseleção")),
         group("Feições",
               split("mActionAddFeature",
                     ("mActionAddFeature", "-", "mActionDigitizeWithSegment",
