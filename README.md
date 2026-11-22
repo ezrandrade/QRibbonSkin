@@ -1,6 +1,6 @@
-# QRibbonSkin 1.4.3
+# QRibbonSkin 1.5.0
 
-O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, e a **página inicial original do QGIS** é preservada.
+O **QRibbonSkin** oferece ao **QGIS 3.44 LTR** e ao **QGIS 4.x** uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, e a **página inicial original do QGIS** é preservada.
 
 ## Recursos
 
@@ -33,11 +33,13 @@ O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **m
 
 A versão 1.4.3 não foi testada no Windows 10 com QGIS 4.0.
 
+**QGIS 3.44 LTR (a partir da versão 1.5.0):** o mesmo código roda em Qt5/PyQt5 (QGIS 3.44) e Qt6/PyQt6 (QGIS 4.x). A compatibilidade foi verificada em ambiente de teste com PyQt 5.15 e os arquivos de interface oficiais do QGIS 3.44; **ainda não foi homologada no QGIS 3.44 real**. No 3.44, comandos que só existem no QGIS 4 (digitalização Bézier/NURBS, contagem de feições no Designer de Modelos) simplesmente não aparecem.
+
 Essas validações foram comunicadas pelo responsável pelos testes; não constituem garantia de compatibilidade com todas as configurações do QGIS.
 
 ## Instalação
 
-1. Abra **Complementos → Gerenciar e Instalar Complementos** no QGIS 4.x.
+1. Abra **Complementos → Gerenciar e Instalar Complementos** no QGIS 3.44 LTR ou 4.x.
 2. Escolha **Instalar a partir de ZIP** e selecione o arquivo distribuído.
 3. Ative o QRibbonSkin. A opção de retorno à interface clássica fica na guia **Configurações**; o complemento também pode ser desativado pelo gerenciador de complementos.
 

@@ -22,6 +22,7 @@ Light by design:
 from qgis.PyQt.QtCore import QObject, Qt, QTimer, QCoreApplication
 from qgis.PyQt.QtWidgets import QApplication, QMainWindow, QMenu, QSizePolicy, QToolBar
 
+from .compat import QAction
 from .i18n import tr
 from .ribbon import RibbonFrame, clean_caption
 from .editor_specs import LayoutSpec, GeoreferencerSpec, ModelDesignerSpec, NATIVE_BARS
@@ -196,7 +197,6 @@ class EditorSession(QObject):
             "QToolBar#%s { background: palette(window); border: 0; padding: 0; "
             "margin: 0; spacing: 0; }" % TOOLBAR_NAME)
         try:
-            from qgis.PyQt.QtGui import QAction
             self.native_action = QAction(tr("Barras nativas"), self.toolbar)
             self.native_action.setCheckable(True)
             self.native_action.toggled.connect(self.set_native_visible)
@@ -356,8 +356,10 @@ class _WindowManager(QObject):
         self._active = True
         app.focusChanged.connect(self._on_focus_changed)
         try:
-            from qgis.PyQt.QtGui import QAction
-            self._open_action = self.iface.mainWindow().findChild(QAction, self.OPEN_ACTION)
+            window = self.iface.mainWindow()
+            self._open_action = next(
+                (a for a in (window.findChild(QAction, n) for n in self.OPEN_ACTION.split("|"))
+                 if a is not None), None)
         except (AttributeError, RuntimeError):
             self._open_action = None
         if self._open_action is not None:
@@ -437,7 +439,7 @@ class ModelDesignerManager(_WindowManager):
     """Processing Model Designer (QgsModelDesignerDialog and subclasses)."""
 
     SPEC = ModelDesignerSpec
-    OPEN_ACTION = "mActionModelDesigner"
+    OPEN_ACTION = "mActionModelDesigner|modelerAction"  # QGIS 4.x | QGIS 3.44
 
     def matches(self, window):
         try:

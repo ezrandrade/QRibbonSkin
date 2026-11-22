@@ -15,9 +15,10 @@ import unicodedata
 from qgis.core import QgsSettings, QgsMessageLog, Qgis
 
 from qgis.PyQt.QtCore import Qt, QEvent, QObject, QTimer
-from qgis.PyQt.QtGui import QAction, QIcon, QKeySequence, QShortcut
+from qgis.PyQt.QtGui import QIcon, QKeySequence
 from qgis.PyQt.QtWidgets import QApplication, QToolBar, QDockWidget
 
+from .compat import QAction, QShortcut
 from .i18n import configure_language, tr
 from .ribbon import RibbonWidget
 from .editors import LayoutDesignerManager, GeoreferencerManager, ModelDesignerManager

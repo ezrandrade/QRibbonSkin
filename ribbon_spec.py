@@ -60,6 +60,9 @@ def group(title, *items, when=None):
     return {"title": title, "items": list(items), "when": when}
 
 
+# Names: a QAction/QMenu objectName, or "name4|name3" when QGIS 4.x and
+# QGIS 3.44 LTR name the same command differently (the first found is used).
+
 # Commands implemented by QRibbonSkin itself (interface only, never data).
 PLUGIN = "qrs."
 CLASSIC = PLUGIN + "classic"
@@ -102,8 +105,14 @@ DOCK_FALLBACK = {
     "ShowGpsPanel": "GPSInformation",
     "ShowDevToolsPanel": "DevTools",
     "dock:MessageLog": "MessageLog",
-    "dock:ProcessingToolbox": "ProcessingToolboxDockWidget",
+    # QGIS 4.x | QGIS 3.44 (Processing Python plugin)
+    "dock:ProcessingToolbox": ("ProcessingToolboxDockWidget", "ProcessingToolbox"),
 }
+
+# QGIS 3.44 LTR: Processing is a core Python plugin; its own commands and its
+# top-level "processing" menu are QGIS's, not a third-party plugin's.
+PROCESSING_PLUGIN_ACTIONS = frozenset(("toolboxAction", "modelerAction", "historyAction",
+                                       "resultsViewer", "editInPlaceFeatures", "optionsAction"))
 
 # Icons for processing dialogs and plugin commands (no native QAction).
 COMMAND_ICONS = {
@@ -164,7 +173,8 @@ PLUGIN_SOURCE_MENUS = ("mPluginMenu", "mVectorMenu", "mRasterMenu", "mDatabaseMe
 NATIVE_TOP_MENUS = frozenset(("mProjectMenu", "mEditMenu", "mViewMenu", "mLayerMenu",
                               "mSettingsMenu", "mPluginMenu", "mVectorMenu", "mRasterMenu",
                               "mDatabaseMenu", "mWebMenu", "mMeshMenu", "mProcessingMenu",
-                              "mHelpMenu", "mWindowMenu"))
+                              "mHelpMenu", "mWindowMenu",
+                              "processing"))  # QGIS 3.44: Processing plugin menu
 
 # Tabs whose groups depend on the layer selected in the Layers panel.
 LAYER_DEPENDENT_TABS = ("data", "style", "labeling")
@@ -401,11 +411,11 @@ GROUPS = {
     ),
     "analyze": (
         group("Geoprocessamento",
-              big("mProcessingHistoryAction", "Histórico"),
-              big("mActionShowProcessingToolbox", "Caixa de\nFerramentas"),
-              big("mActionModelDesigner", "Designer de\nmodelos"),
+              big("mProcessingHistoryAction|historyAction", "Histórico"),
+              big("mActionShowProcessingToolbox|toolboxAction", "Caixa de\nFerramentas"),
+              big("mActionModelDesigner|modelerAction", "Designer de\nmodelos"),
               col(small("mActionShowPythonDialog", "Python"),
-                  small("mActionEditFeaturesInPlace", "Editar no local"),
+                  small("mActionEditFeaturesInPlace|editInPlaceFeatures", "Editar no local"),
                   small("mActionQueryHistory", "Histórico SQL"))),
         # "native:" = the QGIS menu without plugin entries: plugins have
         # their own groups on the Plugins tab (RustGIS rule).

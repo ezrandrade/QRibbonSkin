@@ -27,14 +27,15 @@ import unicodedata
 from pathlib import Path
 
 from qgis.PyQt.QtCore import Qt, QSize, QRect, QRectF, QPointF, QTimer
-from qgis.PyQt.QtGui import (QAction, QColor, QFont, QFontMetrics, QIcon, QKeySequence,
-                             QPainter, QPainterPath, QPalette, QPen, QPixmap, QShortcut)
+from qgis.PyQt.QtGui import (QColor, QFont, QFontMetrics, QIcon, QKeySequence,
+                             QPainter, QPainterPath, QPalette, QPen, QPixmap)
 from qgis.PyQt.QtWidgets import (
     QDockWidget, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMenu, QScrollArea, QSizePolicy, QStackedWidget, QStyle, QStyleOptionToolButton,
     QStylePainter, QTabBar, QToolBar, QToolButton, QVBoxLayout, QWidget, QWidgetAction,
 )
 
+from .compat import QAction, QShortcut
 from .i18n import tr
 from . import ribbon_spec as spec
 
@@ -80,7 +81,8 @@ def is_native_action(action):
     sub = action.menu()
     if sub is None:
         name = action.objectName()
-        return name.startswith(("mAction", "mProcessing"))
+        return (name.startswith(("mAction", "mProcessing"))
+                or name in spec.PROCESSING_PLUGIN_ACTIONS)
     leaves = [a for a in sub.actions() if not a.isSeparator()]
     return bool(leaves) and all(is_native_action(a) for a in leaves)
 
@@ -214,15 +216,22 @@ class ActionIndex:
                 self.menus[name] = qmenu
 
     def action(self, name):
+        if "|" in name:  # QGIS 4.x name | QGIS 3.44 name
+            for alternative in name.split("|"):
+                found = self.action(alternative)
+                if found is not None:
+                    return found
+            return None
         found = self.actions.get(name)
         if found is None:
             found = self.window.findChild(QAction, name)
             if found is None:
-                dock_name = spec.DOCK_FALLBACK.get(name)
-                if dock_name:
+                docks = spec.DOCK_FALLBACK.get(name, ())
+                for dock_name in (docks,) if isinstance(docks, str) else docks:
                     dock = self.window.findChild(QDockWidget, dock_name)
                     if dock is not None:
                         found = dock.toggleViewAction()
+                        break
             if found is not None:
                 self.actions[name] = found
         return found
