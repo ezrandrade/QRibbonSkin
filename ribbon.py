@@ -26,7 +26,7 @@ layer changes. The command list for the Spotlight is read only when it opens.
 import unicodedata
 from pathlib import Path
 
-from qgis.PyQt.QtCore import Qt, QSize, QRect, QPointF, QTimer
+from qgis.PyQt.QtCore import Qt, QSize, QRect, QRectF, QPointF, QTimer
 from qgis.PyQt.QtGui import (QAction, QColor, QFont, QFontMetrics, QIcon, QKeySequence,
                              QPainter, QPainterPath, QPalette, QPen, QPixmap, QShortcut)
 from qgis.PyQt.QtWidgets import (
@@ -517,45 +517,51 @@ def rank_commands(commands, query, limit=SPOTLIGHT_LIMIT):
 
 
 class Spotlight(QWidget):
-    """Alt+Q command palette centred over QGIS, in the style of macOS Spotlight.
+    """Alt+Q command palette over QGIS, in the style of macOS Spotlight.
 
-    A frameless popup (closes on Esc or a click outside) with a large query
-    field and the matching native commands (icon, name and menu path). Enter
-    runs the selected QAction; nothing is executed by the plugin itself.
+    It is a *child overlay* of the QGIS main window, not a separate window:
+    its position is computed in QGIS's own coordinates, so no window manager
+    (Wayland, mixed-DPI Windows) can move it. The overlay covers the window
+    transparently only to catch a click outside the panel, which closes it.
+
+    The panel opens as the search field alone, centred on the QGIS window;
+    results grow *downwards* while the field stays put (it must not jump while
+    the user types). Enter runs the selected native QAction.
     """
 
+    MAX_ROWS = 8
+    RADIUS = 12
+    SHADOW = 10
+
     def __init__(self, window):
-        super().__init__(window, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        super().__init__(window)
         self._window = window
         self._commands = {}
         self._recent = []
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setObjectName("QRibbonSkinSpotlightWindow")
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        panel = QFrame(self)
-        panel.setObjectName("QRibbonSkinSpotlight")
-        panel.setStyleSheet(
-            "QFrame#QRibbonSkinSpotlight { background: palette(base); "
-            "border: 1px solid palette(mid); border-radius: 12px; }"
+        self._anchor_y = 0
+        self.setObjectName("QRibbonSkinSpotlightOverlay")
+        self.hide()
+        self.panel = QWidget(self)
+        self.panel.setObjectName("QRibbonSkinSpotlight")
+        self.panel.setStyleSheet(
             "QLineEdit#QRibbonSkinSpotlightQuery { background: transparent; border: 0; "
-            "color: palette(text); padding: 4px 2px; }"
+            "color: palette(text); padding: 2px 2px; }"
             "QListWidget#QRibbonSkinSpotlightList { background: transparent; border: 0; "
             "outline: 0; }"
             "QListWidget#QRibbonSkinSpotlightList::item { padding: 4px 6px; border-radius: 6px; }"
             "QListWidget#QRibbonSkinSpotlightList::item:selected { "
             "background: palette(highlight); color: palette(highlighted-text); }"
             "QLabel { background: transparent; }")
-        outer.addWidget(panel)
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(6)
+        layout = QVBoxLayout(self.panel)
+        layout.setContentsMargins(self.SHADOW + 14, self.SHADOW + 8,
+                                  self.SHADOW + 14, self.SHADOW + 8)
+        layout.setSpacing(4)
         top = QHBoxLayout()
         top.setSpacing(8)
-        icon = QLabel(panel)
+        icon = QLabel(self.panel)
         icon.setPixmap(theme_icon("/search.svg").pixmap(QSize(20, 20)))
         top.addWidget(icon)
-        self.query = QLineEdit(panel)
+        self.query = QLineEdit(self.panel)
         self.query.setObjectName("QRibbonSkinSpotlightQuery")
         self.query.setPlaceholderText(tr("Digite para buscar ferramentas"))
         font = self.query.font()
@@ -563,15 +569,24 @@ class Spotlight(QWidget):
         self.query.setFont(font)
         top.addWidget(self.query, 1)
         layout.addLayout(top)
-        self.results = QListWidget(panel)
+        self.separator = QFrame(self.panel)
+        self.separator.setFixedHeight(1)
+        self.separator.setAutoFillBackground(True)
+        pal = self.separator.palette()
+        pal.setColor(QPalette.ColorRole.Window,
+                     _mix(pal.color(QPalette.ColorRole.Mid), pal.color(QPalette.ColorRole.Base), 0.5))
+        self.separator.setPalette(pal)
+        layout.addWidget(self.separator)
+        self.results = QListWidget(self.panel)
         self.results.setObjectName("QRibbonSkinSpotlightList")
         self.results.setIconSize(QSize(BIG_ICON, BIG_ICON))
         self.results.setUniformItemSizes(True)
+        self.results.setFrameShape(QFrame.Shape.NoFrame)
         self.results.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # Spotlight style: no scroll bar; wheel and arrow keys still scroll.
         self.results.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        layout.addWidget(self.results, 1)
-        self.footer = QLabel(tr("Enter: executar  ·  Esc: fechar"), panel)
+        layout.addWidget(self.results)
+        self.footer = QLabel(self.panel)
         pal = self.footer.palette()
         pal.setColor(QPalette.ColorRole.WindowText,
                      _mix(pal.color(QPalette.ColorRole.WindowText),
@@ -583,38 +598,100 @@ class Spotlight(QWidget):
         self.results.itemActivated.connect(self._run_item)
         self.results.itemClicked.connect(self._run_item)
 
+    # ---------------------------------------------------------------- open
     def open(self, text=""):
         self._commands = collect_commands(self._window)
-        # Centred on the usable area of the monitor that shows QGIS.
-        screen = self._window.screen()
-        area = screen.availableGeometry() if screen is not None else self._window.frameGeometry()
-        width = min(640, max(420, int(area.width() * 0.46)))
-        row = QFontMetrics(self.results.font()).height() + 10
-        height = 70 + row * 9 + QFontMetrics(self.footer.font()).height()
-        self.setFixedSize(width, height)
-        self.move(area.x() + (area.width() - width) // 2, area.y() + (area.height() - height) // 2)
+        self.setGeometry(self._window.rect())
         self.query.blockSignals(True)
         self.query.setText(text)
         self.query.blockSignals(False)
-        self._populate(text)
+        self._window.installEventFilter(self)  # follow resizes while open only
         self.show()
         self.raise_()
-        self.activateWindow()
+        self._populate(text)
+        # Field centred on the QGIS window; results then grow downwards.
+        self._anchor_y = (self.height() - self._field_height()) // 2
+        self._layout_panel()
         self.query.setFocus(Qt.FocusReason.PopupFocusReason)
         self.query.end(False)
 
+    def close(self):  # noqa: D401 - keep QWidget semantics
+        try:
+            self._window.removeEventFilter(self)
+        except RuntimeError:
+            pass
+        return super().close()
+
+    def _field_height(self):
+        margins = self.panel.layout().contentsMargins()
+        return margins.top() + self.query.sizeHint().height() + margins.bottom()
+
+    def _layout_panel(self):
+        width = min(640, max(420, int(self.width() * 0.46)))
+        rows = min(self.results.count(), self.MAX_ROWS)
+        showing = rows > 0
+        self.results.setVisible(showing)
+        self.separator.setVisible(showing or bool(self.footer.text()))
+        self.footer.setVisible(bool(self.footer.text()))
+        height = self._field_height()
+        spacing = self.panel.layout().spacing()
+        if showing:
+            row_h = self._row_height()
+            self.results.setFixedHeight(rows * row_h + 4)
+            height += spacing + 1 + spacing + rows * row_h + 4
+        if self.footer.isVisible():
+            if not showing:
+                height += spacing + 1
+            height += spacing + self.footer.sizeHint().height()
+        y = self._anchor_y
+        if y + height > self.height() - 8:          # keep it on screen
+            y = max(8, self.height() - 8 - height)
+        self.panel.setGeometry((self.width() - width) // 2, y, width, height)
+        self.update()
+
+    # --------------------------------------------------------------- paint
+    def paintEvent(self, _event):  # noqa: N802
+        """Rounded panel with a soft shadow, in palette colours."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = self.panel.geometry().adjusted(self.SHADOW, self.SHADOW,
+                                              -self.SHADOW, -self.SHADOW)
+        for i in range(self.SHADOW, 0, -2):
+            shadow = QColor(0, 0, 0, max(2, 22 - 2 * i))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(shadow)
+            painter.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2),
+                                    self.RADIUS + i, self.RADIUS + i)
+        pal = self.palette()
+        painter.setBrush(pal.color(QPalette.ColorRole.Base))
+        painter.setPen(QPen(pal.color(QPalette.ColorRole.Mid), 1))
+        painter.drawRoundedRect(QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5),
+                                self.RADIUS, self.RADIUS)
+        painter.end()
+
+    def mousePressEvent(self, event):  # noqa: N802
+        # Only reached for clicks on the transparent overlay: outside the panel.
+        self.close()
+        event.accept()
+
+    # ------------------------------------------------------------- results
+    def _row_height(self):
+        """One fixed row height (icon or not), so the panel grows evenly."""
+        return max(BIG_ICON, QFontMetrics(self.results.font()).height()) + 10
+
     def _populate(self, text):
         self.results.clear()
+        row_h = self._row_height()
         keys = rank_commands(self._commands, text) if text.strip() else \
             [k for k in self._recent if k in self._commands]
         for key in keys:
             action, caption, where = self._commands[key]
-            label = caption if not where else "%s\n%s" % (caption, where)
-            item = QListWidgetItem(action.icon(), label.split("\n")[0])
+            item = QListWidgetItem(action.icon(), caption)
             if where:
                 item.setToolTip(where)
                 item.setText("%s   —   %s" % (caption, where))
             item.setData(Qt.ItemDataRole.UserRole, key)
+            item.setSizeHint(QSize(0, row_h))
             if not action.isEnabled():
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
             self.results.addItem(item)
@@ -624,13 +701,19 @@ class Spotlight(QWidget):
                  if self.results.item(i).flags() & Qt.ItemFlag.ItemIsEnabled), 0))
         if text.strip() and not keys:
             self.footer.setText(tr("Nenhum comando encontrado"))
-        elif not text.strip():
-            self.footer.setText(tr("Digite para buscar ferramentas") + "  ·  " +
-                                tr("Enter: executar  ·  Esc: fechar"))
-        else:
+        elif keys:
             self.footer.setText(tr("Enter: executar  ·  Esc: fechar"))
+        else:
+            self.footer.setText("")
+        if self.isVisible():
+            self._layout_panel()
 
     def eventFilter(self, watched, event):  # noqa: N802
+        if watched is self._window and event.type() == event.Type.Resize:
+            self.setGeometry(self._window.rect())
+            self._anchor_y = (self.height() - self._field_height()) // 2
+            self._layout_panel()
+            return False
         if watched is self.query and event.type() == event.Type.KeyPress:
             key = event.key()
             if key == Qt.Key.Key_Escape:
@@ -638,7 +721,8 @@ class Spotlight(QWidget):
                 return True
             if key in (Qt.Key.Key_Down, Qt.Key.Key_Up, Qt.Key.Key_PageDown, Qt.Key.Key_PageUp):
                 step = {Qt.Key.Key_Down: 1, Qt.Key.Key_Up: -1,
-                        Qt.Key.Key_PageDown: 8, Qt.Key.Key_PageUp: -8}[key]
+                        Qt.Key.Key_PageDown: self.MAX_ROWS,
+                        Qt.Key.Key_PageUp: -self.MAX_ROWS}[key]
                 count = self.results.count()
                 if count:
                     row = max(0, min(count - 1, self.results.currentRow() + step))
@@ -661,7 +745,7 @@ class Spotlight(QWidget):
             self._recent.remove(key)
         self._recent.insert(0, key)
         del self._recent[12:]
-        # Let the popup close before a modal QGIS dialog opens.
+        # Let the overlay close before a modal QGIS dialog opens.
         QTimer.singleShot(0, entry[0].trigger)
 
 
