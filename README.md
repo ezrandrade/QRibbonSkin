@@ -25,7 +25,9 @@ O **QRibbonSkin** oferece ao **QGIS 3.44 LTR** e ao **QGIS 4.x** uma interface R
 
 | Versão do QRibbonSkin | Sistema | QGIS | Resultado |
 |---|---|---|---|
+| 1.5.1 | Windows 11 26H2 | 4.2.2 | Homologado |
 | 1.5.1 | Windows 11 26H2 | 3.44.15 LTR | Homologado |
+| 1.5.1 | Ubuntu Linux 26.04 LTS | 4.2.2 | Homologado |
 | 1.5.1 | Ubuntu Linux 26.04 LTS | 3.44.15 LTR | Homologado |
 | 1.4.3 | Windows 11 | 4.2.x | Homologado |
 | 1.4.3 | Ubuntu Linux (Flatpak) | 4.2.x | Homologado |
@@ -35,7 +37,7 @@ O **QRibbonSkin** oferece ao **QGIS 3.44 LTR** e ao **QGIS 4.x** uma interface R
 
 A versão 1.4.3 não foi testada no Windows 10 com QGIS 4.0.
 
-**QGIS 3.44 LTR (a partir da versão 1.5.0):** o mesmo código roda em Qt5/PyQt5 (QGIS 3.44) e Qt6/PyQt6 (QGIS 4.x); homologado no QGIS 3.44.15 a partir da versão 1.5.1. As alterações das versões 1.5.x foram verificadas no QGIS 4.x apenas pelos testes automatizados; a última homologação no QGIS 4.2.x é a da versão 1.4.3. No 3.44, comandos que só existem no QGIS 4 (digitalização Bézier/NURBS, contagem de feições no Designer de Modelos) simplesmente não aparecem.
+**QGIS 3.44 LTR (a partir da versão 1.5.0):** o mesmo código roda em Qt5/PyQt5 (QGIS 3.44) e Qt6/PyQt6 (QGIS 4.x); a versão 1.5.1 foi homologada no QGIS 3.44.15 LTR e no QGIS 4.2.2, em Windows 11 e Ubuntu 26.04 LTS. No 3.44, comandos que só existem no QGIS 4 (digitalização Bézier/NURBS, contagem de feições no Designer de Modelos) simplesmente não aparecem.
 
 Essas validações foram comunicadas pelo responsável pelos testes; não constituem garantia de compatibilidade com todas as configurações do QGIS.
 
