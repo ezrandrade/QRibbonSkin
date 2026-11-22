@@ -83,6 +83,7 @@ class QRibbonSkinPlugin(QObject):
         # the main window's ChildAdded event instead of a 1.2 s polling timer.
         self._toolbar_sync_pending = False
         self._dock_visibility = []
+        self._focus_snapshot = []
         self._focus_map = False
         self._is_active = False
         self._changing = False
@@ -706,26 +707,43 @@ class QRibbonSkinPlugin(QObject):
         return action
 
     def _set_map_focus(self, focus):
-        # Do not change dock areas or QGIS project information. Visibility
-        # is restored from the captured pre-Ribbon snapshot.
+        # Do not change dock areas or QGIS project information. The panels
+        # come back as they were when "Focus on map" was turned on.
         if self._ribbon_bar is None:
             return
-        self._focus_map = bool(focus)
-        if focus:
-            for dock, _visible in self._dock_visibility:
+        if focus and not self._focus_map:
+            self._focus_snapshot = []
+            for dock in self.iface.mainWindow().findChildren(QDockWidget):
+                if dock.parent() is not self.iface.mainWindow():
+                    continue
                 try:
+                    self._focus_snapshot.append((dock, dock.isVisible()))
                     dock.hide()
                 except RuntimeError:
-                    pass
-        else:
-            self._restore_dock_visibility()
+                    continue
+            self._focus_map = True
+        elif not focus:
+            self._restore_focus_snapshot()
+
+    def _restore_focus_snapshot(self):
+        """Undo only what QRibbonSkin hid ("Focus on map"); a panel the user
+        opened or closed during the session stays as the user left it."""
+        for dock, visible in self._focus_snapshot:
+            try:
+                dock.setVisible(visible)
+            except RuntimeError:
+                pass
+        self._focus_snapshot = []
+        self._focus_map = False
 
     def _restore_dock_visibility(self):
+        """Explicit "Restore original panels": the visibility before the Ribbon."""
         for dock, visible in self._dock_visibility:
             try:
                 dock.setVisible(visible)
             except RuntimeError:
                 pass
+        self._focus_snapshot = []
         self._focus_map = False
 
     def _restore_menu_bar(self):
@@ -815,7 +833,11 @@ class QRibbonSkinPlugin(QObject):
                         and self._restore_known_good_toolbars(allow_core_fallback=True)):
                     expected_bars = [(bar, bar.isVisible()) for bar, _ in expected_bars]
                 try:
-                    self._restore_dock_visibility()
+                    # Only what QRibbonSkin itself hid. Replaying the snapshot
+                    # taken at activation here (before QGIS saves its layout)
+                    # reopened every panel the user had closed in the session,
+                    # e.g. the Browser on every start (inherited from 1.1.44).
+                    self._restore_focus_snapshot()
                 finally:
                     self._dock_visibility = []
                     # Always restore the native QGIS menu on partial failure.
