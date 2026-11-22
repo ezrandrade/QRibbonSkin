@@ -347,5 +347,77 @@ class ModelDesignerSpec:
     }
 
 
+TABLE_ACTIONS = "qrs.table_feature_actions"   # the dialog's "Actions" tool button
+TABLE_DOCK = "qrs.table_dock"                  # QGIS's dock/undock toggle (no objectName)
+
+
+class AttributeTableSpec:
+    """QGIS attribute table (QgsAttributeTableDialog, floating or docked).
+
+    No RustGIS window to mirror: RustGIS keeps table commands in its Data
+    tab (Table, Selection, Data Design), whose wording is used here; groups
+    and commands come from the dialog's own toolbar (qgsattributetabledialog.ui).
+    Commands QGIS removes from that toolbar for the layer (e.g. Delete when
+    the provider cannot delete) are not shown either.
+    """
+
+    COMMAND_LABELS = dict(_COMMON_LABELS)
+    COMMAND_LABELS.update({TABLE_ACTIONS: "Ações", TABLE_DOCK: "Acoplar"})
+    COMMAND_ICONS = dict(_COMMON_ICONS)
+    COMMAND_ICONS.update({TABLE_ACTIONS: "/mAction.svg", TABLE_DOCK: "/mDockify.svg"})
+    COMMAND_TIPS = dict(_COMMON_TIPS)
+    QUICK_ACCESS = ("mActionToggleEditing", "mActionSaveEdits", "mActionReload")
+    TABS = (
+        ("home", "Início"),
+        ("fields", "Campos"),
+        ("settings", "Configurações"),
+    )
+    GROUPS = {
+        "home": (
+            group("Edição",
+                  big("mActionToggleEditing", "Editar"),
+                  big("mActionSaveEdits", "Salvar"),
+                  col(small("mActionToggleMultiEdit", "Edição múltipla"),
+                      small("mActionReload", "Recarregar"))),
+            group("Feições",
+                  split("mActionAddFeature",
+                        ("mActionAddFeatureViaAttributeTable", "mActionAddFeatureViaAttributeForm"),
+                        "Adicionar"),
+                  big("mActionDeleteSelected", "Excluir")),
+            group("Área de transferência",
+                  big("mActionPasteFeatures", "Colar"),
+                  col(small("mActionCutSelectedRows", "Recortar"),
+                      small("mActionCopySelectedRows", "Copiar"))),
+            group("Seleção",
+                  big("mActionExpressionSelect", "Por\nexpressão"),
+                  big("mActionSearchForm", "Por\nformulário"),
+                  col(small("mActionSelectAll", "Tudo"),
+                      small("mActionInvertSelection", "Inverter"),
+                      small("mActionRemoveSelection", "Limpar")),
+                  col(small("mActionSelectedToTop", "Seleção no topo"))),
+            group("Mapa",
+                  col(small("mActionPanMapToSelectedRows", "Centralizar seleção"),
+                      small("mActionZoomMapToSelectedRows", "Zoom na seleção"))),
+            group("Ações",
+                  menu("Ações", "/mAction.svg", (TABLE_ACTIONS,))),
+        ),
+        "fields": (
+            group("Estrutura de dados",
+                  big("mActionAddAttribute", "Novo\ncampo"),
+                  big("mActionRemoveAttribute", "Excluir\ncampo"),
+                  big("mActionOpenFieldCalculator", "Calcular")),
+            group("Exibição",
+                  big("mActionOrganizeColumns", "Organizar\ncolunas"),
+                  big("mActionSetStyles", "Formatação\ncondicional")),
+        ),
+        "settings": (
+            group("Janela",
+                  big(TABLE_DOCK, "Acoplar"),
+                  big("mActionHelp", "Ajuda")),
+            _ribbon_group(),
+        ),
+    }
+
+
 EDITOR_SPECS = {"layout": LayoutSpec, "georeferencer": GeoreferencerSpec,
-                "model": ModelDesignerSpec}
+                "model": ModelDesignerSpec, "table": AttributeTableSpec}

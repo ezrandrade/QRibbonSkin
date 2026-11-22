@@ -1,4 +1,4 @@
-# QRibbonSkin 1.5.2
+# QRibbonSkin 1.6.0
 
 O **QRibbonSkin** oferece ao **QGIS 3.44 LTR** e ao **QGIS 4.x** uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, e a **página inicial original do QGIS** é preservada.
 
@@ -69,5 +69,13 @@ O **Compositor de Layout**, o **Georreferenciador** e o **Designer de Modelos** 
 - **Designer de Modelos:** a ordem segue a barra do ModelBuilder do RustGIS (executar, editar, organizar, navegar).
 
 As barras e menus originais de cada janela ficam apenas ocultos (**Configurações → Barras nativas** os mostra novamente) e são restaurados ao fechar a janela ou desativar o QRibbonSkin; nenhuma ação é removida delas e nenhum painel é estilizado.
+
+### Tabela de atributos / Attribute table (v1.6.0)
+
+A **tabela de atributos** recebe a mesma Ribbon, com as guias **Início** (Edição, Feições, Área de transferência, Seleção, Mapa, Ações), **Campos** (Estrutura de dados, Exibição) e **Configurações**. Só aparecem os comandos que o QGIS deixa na barra da tabela para aquela camada (sem permissão de exclusão, por exemplo, *Excluir* e *Recortar* não aparecem), e o botão *Ações* só aparece quando a camada tem ações de feição. Os atalhos próprios da tabela (Ctrl+E, Ctrl+F, Del…) continuam funcionando.
+
+Quando a tabela está **acoplada** à janela principal, a Ribbon começa recolhida (um clique numa guia a mostra) e Alt+Q/Ctrl+F1 ficam com a Ribbon principal, sem conflito de atalhos; ao desacoplar, volta expandida. A barra original da tabela fica apenas oculta (**Configurações → Barras nativas**) e é devolvida ao desativar o QRibbonSkin.
+
+**English:** the attribute table gets the same Ribbon (floating or docked); only commands QGIS keeps on the table toolbar for the layer are shown, table shortcuts keep working, and the native toolbar is restored on exit.
 
 **English:** the Layout Designer, Georeferencer and Model Designer share the main window's Ribbon component (native icons, theme colours, Alt+Q Spotlight). Native toolbars are only hidden and are restored on close; nothing is removed from them.

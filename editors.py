@@ -21,13 +21,15 @@ Light by design:
 
 import sys
 
-from qgis.PyQt.QtCore import QObject, Qt, QTimer, QCoreApplication
-from qgis.PyQt.QtWidgets import QApplication, QMainWindow, QMenu, QSizePolicy, QToolBar
+from qgis.PyQt.QtCore import QEvent, QObject, Qt, QTimer, QCoreApplication
+from qgis.PyQt.QtWidgets import (QApplication, QMainWindow, QMenu, QSizePolicy, QToolBar,
+                                 QToolButton, QVBoxLayout, QWidget, QWidgetAction)
 
 from .compat import QAction
 from .i18n import tr
 from .ribbon import RibbonFrame, clean_caption
-from .editor_specs import LayoutSpec, GeoreferencerSpec, ModelDesignerSpec, NATIVE_BARS
+from .editor_specs import (LayoutSpec, GeoreferencerSpec, ModelDesignerSpec, AttributeTableSpec,
+                           NATIVE_BARS, TABLE_ACTIONS, TABLE_DOCK)
 
 TOOLBAR_NAME = "QRibbonSkinEditorToolbar"
 
@@ -449,3 +451,260 @@ class ModelDesignerManager(_WindowManager):
             return isinstance(window, QMainWindow) and bool(window.inherits("QgsModelDesignerDialog"))
         except (RuntimeError, AttributeError, TypeError):
             return False
+
+
+# ------------------------------------------------------------ attribute table
+TABLE_CLASS = "QgsAttributeTableDialog"
+
+
+def _table_dialog_of(widget):
+    """The QgsAttributeTableDialog containing ``widget`` (floating or docked)."""
+    while widget is not None:
+        try:
+            if widget.inherits(TABLE_CLASS):
+                return widget
+            widget = widget.parentWidget()
+        except RuntimeError:
+            return None
+    return None
+
+
+class AttributeTableRibbon(RibbonFrame):
+    """Ribbon of one attribute table; mirrors what QGIS leaves on its toolbar."""
+
+    def __init__(self, dialog, toolbar, own=None, parent=None):
+        self._toolbar = toolbar
+        super().__init__(dialog, AttributeTableSpec, own, parent)
+        self.start()
+
+    def _on_toolbar(self, action):
+        return any(a is action for a in self._toolbar.actions())
+
+    def _resolve(self, name):
+        if name == TABLE_DOCK:
+            # QgsDockableWidgetHelper's toggle: the toolbar's only checkable
+            # action without an objectName (its text is translated).
+            return next((a for a in self._toolbar.actions() if a.isCheckable()
+                         and not a.objectName() and not a.isSeparator()), None)
+        action = super()._resolve(name)
+        if (action is not None and not name.startswith("qrs.")
+                and action.objectName() in self._toolbar_names() and not self._on_toolbar(action)):
+            return None  # QGIS removed it for this layer (e.g. cannot delete)
+        return action
+
+    def _toolbar_names(self):
+        """Commands the .ui puts on the toolbar (QGIS may remove some)."""
+        return {"mActionToggleEditing", "mActionToggleMultiEdit", "mActionSaveEdits", "mActionReload",
+                "mActionAddFeature", "mActionDeleteSelected", "mActionCutSelectedRows",
+                "mActionCopySelectedRows", "mActionPasteFeatures", "mActionExpressionSelect",
+                "mActionSelectAll", "mActionInvertSelection", "mActionRemoveSelection",
+                "mActionSearchForm", "mActionSelectedToTop", "mActionPanMapToSelectedRows",
+                "mActionZoomMapToSelectedRows", "mActionAddAttribute", "mActionRemoveAttribute",
+                "mActionOrganizeColumns", "mActionOpenFieldCalculator", "mActionSetStyles", "mActionHelp"}
+
+    def _feature_actions_button(self):
+        for action in self._toolbar.actions():
+            if isinstance(action, QWidgetAction) and isinstance(action.defaultWidget(), QToolButton):
+                return action.defaultWidget()
+        return None
+
+    def special_menu(self, entry, parent):
+        if entry != TABLE_ACTIONS:
+            return None
+        native = self._feature_actions_button()
+        source = native.menu() if native is not None else None
+        if native is None or source is None or not source.actions():
+            # QGIS gives the button a menu only when the layer has feature
+            # actions (otherwise it hides it); its hidden flag alone is not
+            # reliable once the toolbar is re-laid out.
+            return None
+        menu = QMenu(parent)
+
+        def refill():
+            menu.clear()
+            source = native.menu()
+            for action in (source.actions() if source is not None else []):
+                menu.addAction(action)
+            if not menu.actions():
+                empty = menu.addAction(tr("Nenhum comando adicional"))
+                empty.setEnabled(False)
+
+        menu.aboutToShow.connect(refill)
+        return menu
+
+    def _keep_native_shortcuts(self):
+        """Keep the table's own shortcuts (Ctrl+E, Ctrl+F, Del, …) alive while
+        its toolbar is hidden. Same QActions, so QGIS's toggleShortcuts(),
+        which clears the ones the main window also uses when docked, still
+        governs them."""
+        for action in self._toolbar.actions():
+            if not action.isSeparator() and not action.shortcut().isEmpty():
+                self.addAction(action)
+
+
+class AttributeTableSession(QObject):
+    """Ribbon on one attribute table; reversible."""
+
+    def __init__(self, dialog, main_window, parent=None):
+        super().__init__(parent)
+        self.dialog = dialog
+        self._main_window = main_window
+        self._disposed = False
+        self._auto_collapsed = False
+        self.toolbar = dialog.findChild(QToolBar, "mToolbar")
+        layout = dialog.layout()
+        if self.toolbar is None or layout is None:
+            raise TypeError("attribute table without mToolbar/layout")
+        self._toolbar_visible = not self.toolbar.isHidden()
+        self.native_action = QAction(tr("Barras nativas"), self)
+        self.native_action.setCheckable(True)
+        self.native_action.toggled.connect(self.set_native_visible)
+        self.ribbon = AttributeTableRibbon(dialog, self.toolbar, {NATIVE_BARS: self.native_action})
+        # Ribbon and (hidden) native toolbar share the toolbar's place.
+        self.container = QWidget(dialog)
+        self.container.setObjectName("QRibbonSkinTableContainer")
+        box = QVBoxLayout(self.container)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(0)
+        layout.replaceWidget(self.toolbar, self.container)
+        box.addWidget(self.ribbon)
+        box.addWidget(self.toolbar)
+        self.toolbar.hide()
+        self.container.show()
+        dialog.installEventFilter(self)  # ParentChange: docked/undocked (this widget only)
+        dialog.destroyed.connect(self._on_destroyed)
+        self._sync_docked()
+
+    def is_docked(self):
+        try:
+            return self.dialog.window() is self._main_window
+        except RuntimeError:
+            return False
+
+    def _sync_docked(self):
+        if self._disposed or not _alive(self.dialog):
+            return
+        docked = self.is_docked()
+        # Docked into the main window, Alt+Q/Ctrl+F1 belong to the main Ribbon.
+        self.ribbon.set_shortcuts_enabled(not docked)
+        # A bottom panel has little height: start collapsed there (one click,
+        # or the chevron, shows it), and expand again when floating.
+        if docked and not self.ribbon._collapsed:
+            self.ribbon.toggle_collapsed()
+            self._auto_collapsed = True
+        elif not docked and self._auto_collapsed and self.ribbon._collapsed:
+            self.ribbon.toggle_collapsed()
+            self._auto_collapsed = False
+
+    def eventFilter(self, watched, event):  # noqa: N802
+        if watched is self.dialog and event.type() == QEvent.Type.ParentChange:
+            QTimer.singleShot(0, self._sync_docked)
+        return False
+
+    def set_native_visible(self, visible):
+        if _alive(self.toolbar):
+            self.toolbar.setVisible(bool(visible))
+
+    def _on_destroyed(self, *_args):
+        self._disposed = True
+
+    def dispose(self):
+        if self._disposed:
+            return
+        self._disposed = True
+        if not _alive(self.dialog):
+            return
+        try:
+            self.dialog.removeEventFilter(self)
+        except RuntimeError:
+            pass
+        if _alive(self.ribbon):
+            self.ribbon.release()
+        layout = self.dialog.layout()
+        if _alive(self.toolbar) and _alive(self.container) and layout is not None:
+            self.container.layout().removeWidget(self.toolbar)
+            self.toolbar.setParent(self.dialog)
+            layout.replaceWidget(self.container, self.toolbar)
+            self.toolbar.setVisible(self._toolbar_visible)
+            self.container.hide()
+            self.container.deleteLater()
+
+
+class AttributeTableManager(QObject):
+    """Attribute tables, found without an application-wide event filter:
+    when focus moves into one, or when a QGIS command opens one."""
+
+    OPEN_ACTIONS = ("mActionOpenTable", "mActionOpenTableSelected",
+                    "mActionOpenTableVisible", "mActionOpenTableEdited")
+
+    def __init__(self, iface, parent=None):
+        super().__init__(parent)
+        self.iface = iface
+        self._active = False
+        self._sessions = {}
+        self._actions = []
+        self.last_error = None
+
+    def start(self):
+        if self._active:
+            return
+        app = QApplication.instance()
+        if app is None:
+            return
+        self._active = True
+        app.focusChanged.connect(self._on_focus_changed)
+        window = self.iface.mainWindow()
+        for name in self.OPEN_ACTIONS:
+            action = window.findChild(QAction, name)
+            if action is not None:
+                action.triggered.connect(self._schedule)
+                self._actions.append(action)
+        self._scan()
+
+    def _on_focus_changed(self, _old, new):
+        if not self._active or new is None:
+            return
+        dialog = _table_dialog_of(new)
+        if dialog is not None and id(dialog) not in self._sessions:
+            self._attach(dialog)
+
+    def _schedule(self, *_args):
+        QTimer.singleShot(0, self._scan)
+        QTimer.singleShot(400, self._scan)
+
+    def _scan(self):
+        if not self._active:
+            return
+        for key in [k for k, s in self._sessions.items() if s._disposed]:
+            self._sessions.pop(key, None)
+        for widget in self.iface.mainWindow().findChildren(QWidget):
+            try:
+                if widget.inherits(TABLE_CLASS) and id(widget) not in self._sessions:
+                    self._attach(widget)
+            except RuntimeError:
+                continue
+
+    def _attach(self, dialog):
+        try:
+            self._sessions[id(dialog)] = AttributeTableSession(dialog, self.iface.mainWindow(), self)
+        except Exception as exc:  # never break QGIS or the main Ribbon
+            self.last_error = str(exc)
+            _log("Attribute table Ribbon: %s" % exc)
+
+    def stop(self):
+        app = QApplication.instance()
+        if self._active and app is not None:
+            try:
+                app.focusChanged.disconnect(self._on_focus_changed)
+            except (RuntimeError, TypeError):
+                pass
+        for action in self._actions:
+            try:
+                action.triggered.disconnect(self._schedule)
+            except (RuntimeError, TypeError):
+                pass
+        self._actions = []
+        self._active = False
+        for session in list(self._sessions.values()):
+            session.dispose()
+        self._sessions.clear()

@@ -544,7 +544,7 @@ def collect_commands(window):
                 key = caption + ("\u0001" + where if where else "")
                 commands.setdefault(key, (action, caption, where))
 
-    menu_bar = window.menuBar()
+    menu_bar = window.menuBar() if hasattr(window, "menuBar") else None  # QDialog: none
     if menu_bar is not None:
         visit(menu_bar.actions(), [])
     for bar in window.findChildren(QToolBar):
@@ -1420,12 +1420,21 @@ class RibbonFrame(QWidget):
                 seen.add(qt_key(action))
                 self.addAction(action)
 
-        menu_bar = self._window.menuBar()
+        menu_bar = self._window.menuBar() if hasattr(self._window, "menuBar") else None
         if menu_bar is not None:
             visit(menu_bar.actions())
         for bar in self._window.findChildren(QToolBar):
             if not bar.objectName().startswith("QRibbonSkin"):
                 visit(bar.actions())
+
+    def set_shortcuts_enabled(self, enabled):
+        """Alt+Q / Ctrl+F1 on or off (off for a Ribbon docked into the main
+        window, whose own Ribbon then owns those keys: no ambiguity)."""
+        for shortcut in self._shortcuts:
+            try:
+                shortcut.setEnabled(bool(enabled))
+            except RuntimeError:
+                pass
 
     def release(self):
         """Disconnect before the Ribbon is deleted."""

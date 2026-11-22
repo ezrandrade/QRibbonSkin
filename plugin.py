@@ -21,7 +21,8 @@ from qgis.PyQt.QtWidgets import QApplication, QToolBar, QDockWidget
 from .compat import QAction, QShortcut
 from .i18n import configure_language, tr
 from .ribbon import RibbonWidget
-from .editors import LayoutDesignerManager, GeoreferencerManager, ModelDesignerManager
+from .editors import (LayoutDesignerManager, GeoreferencerManager, ModelDesignerManager,
+                      AttributeTableManager)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -93,6 +94,7 @@ class QRibbonSkinPlugin(QObject):
         self._layout_manager = LayoutDesignerManager(iface, self)
         self._georeferencer_manager = GeoreferencerManager(iface, self)
         self._model_designer_manager = ModelDesignerManager(iface, self)
+        self._attribute_table_manager = AttributeTableManager(iface, self)
 
     def initGui(self):  # noqa: N802
         win = self.iface.mainWindow()
@@ -636,6 +638,11 @@ class QRibbonSkinPlugin(QObject):
             self._model_designer_manager.start()
         except (AttributeError, RuntimeError, TypeError):
             self._model_designer_manager.stop()
+        # Attribute tables (floating or docked) get the same Ribbon.
+        try:
+            self._attribute_table_manager.start()
+        except (AttributeError, RuntimeError, TypeError):
+            self._attribute_table_manager.stop()
         # Workspace tabs remain deferred to QRibbonSkin 2.0. All editors
         # keep their own QGIS-owned windows and native processing functions.
 
@@ -742,6 +749,10 @@ class QRibbonSkinPlugin(QObject):
         # Restore native Model Designer toolbars before QGIS saves window state.
         try:
             self._model_designer_manager.stop()
+        except (RuntimeError, TypeError, AttributeError):
+            pass
+        try:
+            self._attribute_table_manager.stop()
         except (RuntimeError, TypeError, AttributeError):
             pass
         # Restore each Layout Designer first, including if it is still open.

@@ -414,3 +414,11 @@ EN.update({
 # QRibbonSkin 1.4.1: one button per plugin.
 EN.update({'Mostrar barra de ferramentas': 'Show toolbar'})
 EN.update({'Limpar\nseleção': 'Clear\nSelection'})
+
+# QRibbonSkin 1.6.0: attribute table window.
+EN.update({
+    'Acoplar': 'Dock', 'Ações': 'Actions', 'Edição múltipla': 'Multi Edit',
+    'Excluir\ncampo': 'Delete\nField', 'Formatação\ncondicional': 'Conditional\nFormatting',
+    'Mapa': 'Map', 'Novo\ncampo': 'New\nField', 'Organizar\ncolunas': 'Organize\nColumns',
+    'Por\nexpressão': 'By\nExpression', 'Por\nformulário': 'By\nForm', 'Seleção no topo': 'Selection to Top',
+})
