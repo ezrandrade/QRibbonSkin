@@ -541,6 +541,17 @@ class QRibbonSkinPlugin(QObject):
 
     def _enable(self):
         win = self.iface.mainWindow()
+        # Which copy is running (version and folder): makes a stale or
+        # duplicate installation obvious in the QGIS log.
+        import configparser
+        meta = configparser.ConfigParser()
+        try:
+            meta.read(str(ROOT / "metadata.txt"), encoding="utf-8")
+            version = meta.get("general", "version", fallback="?")
+        except (OSError, configparser.Error) as exc:
+            version = "? (%s)" % exc
+        QgsMessageLog.logMessage("QRibbonSkin %s ativo (%s)" % (version, ROOT),
+                                 "QRibbonSkin", Qgis.MessageLevel.Info)
         self._restore_epoch += 1  # Cancel any previous queued restoration.
         # A non-invasive skin must not snapshot/replay the complete QMainWindow
         # layout: restoreState() may restore an already corrupted toolbar state.

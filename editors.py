@@ -27,7 +27,7 @@ from qgis.PyQt.QtWidgets import (QApplication, QMainWindow, QMenu, QSizePolicy, 
 
 from .compat import QAction
 from .i18n import tr
-from .ribbon import RibbonFrame, clean_caption
+from .ribbon import RibbonFrame, clean_caption, qt_key
 from .editor_specs import (LayoutSpec, GeoreferencerSpec, ModelDesignerSpec, AttributeTableSpec,
                            NATIVE_BARS, TABLE_ACTIONS, TABLE_DOCK)
 
@@ -576,8 +576,10 @@ class AttributeTableSession(QObject):
         self._sync_docked()
 
     def is_docked(self):
+        """Docked into the main window (compared by C++ identity: Python
+        wrappers of the same window are not always the same object)."""
         try:
-            return self.dialog.window() is self._main_window
+            return qt_key(self.dialog.window()) == qt_key(self._main_window)
         except RuntimeError:
             return False
 
@@ -677,7 +679,10 @@ class AttributeTableManager(QObject):
             return
         for key in [k for k, s in self._sessions.items() if s._disposed]:
             self._sessions.pop(key, None)
-        for widget in self.iface.mainWindow().findChildren(QWidget):
+        # A floating table lives in a parent-less QDialog created by
+        # QgsDockableWidgetHelper, outside the main window's widget tree, so
+        # look through every widget (only when a table-opening command runs).
+        for widget in QApplication.allWidgets():
             try:
                 if widget.inherits(TABLE_CLASS) and id(widget) not in self._sessions:
                     self._attach(widget)
