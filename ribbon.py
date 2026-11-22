@@ -585,12 +585,14 @@ class Spotlight(QWidget):
 
     def open(self, text=""):
         self._commands = collect_commands(self._window)
-        win = self._window.frameGeometry()
-        width = min(640, max(420, int(win.width() * 0.46)))
+        # Centred on the usable area of the monitor that shows QGIS.
+        screen = self._window.screen()
+        area = screen.availableGeometry() if screen is not None else self._window.frameGeometry()
+        width = min(640, max(420, int(area.width() * 0.46)))
         row = QFontMetrics(self.results.font()).height() + 10
         height = 70 + row * 9 + QFontMetrics(self.footer.font()).height()
         self.setFixedSize(width, height)
-        self.move(win.x() + (win.width() - width) // 2, win.y() + int(win.height() * 0.16))
+        self.move(area.x() + (area.width() - width) // 2, area.y() + (area.height() - height) // 2)
         self.query.blockSignals(True)
         self.query.setText(text)
         self.query.blockSignals(False)
