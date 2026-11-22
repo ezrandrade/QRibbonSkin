@@ -108,11 +108,11 @@ def theme_icon(path):
         return QIcon(str(ICON_DIR / path[4:]))
     try:
         from qgis.core import QgsApplication
-        icon = QgsApplication.getThemeIcon(path)
-        if icon is not None and not icon.isNull():
-            return icon
-    except Exception:  # pragma: no cover - outside QGIS
-        pass
+    except ImportError:  # pragma: no cover - outside QGIS
+        return QIcon(":/images/themes/default" + path)
+    icon = QgsApplication.getThemeIcon(path)
+    if icon is not None and not icon.isNull():
+        return icon
     return QIcon(":/images/themes/default" + path)
 
 
@@ -1506,12 +1506,11 @@ class RibbonWidget(RibbonFrame):
             processing.execAlgorithmDialog(alg_id)
         except Exception as exc:  # Processing disabled or algorithm missing
             from qgis.core import QgsMessageLog, Qgis
-            try:
-                self.iface.messageBar().pushMessage(
+            message_bar = getattr(self.iface, "messageBar", None)
+            if callable(message_bar) and message_bar() is not None:
+                message_bar().pushMessage(
                     "QRibbonSkin", tr("Algoritmo indisponível: {alg}").format(alg=alg_id),
                     Qgis.MessageLevel.Warning, 5)
-            except Exception:
-                pass
             QgsMessageLog.logMessage(str(exc), "QRibbonSkin", Qgis.MessageLevel.Warning)
 
     # ------------------------------------------------------------ context
@@ -1528,8 +1527,8 @@ class RibbonWidget(RibbonFrame):
             return [self.hint_group(texts[tab_id])]
         return []
 
-
     # ------------------------------------------------------------ plugins
+
     def _plugin_fingerprint(self):
         """Cheap identity of everything plugins added (menus and toolbars)."""
         ids = []

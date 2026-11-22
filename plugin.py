@@ -102,7 +102,8 @@ class QRibbonSkinPlugin(QObject):
         self._switch.setChecked(False)
         self._switch.setObjectName("QRibbonSkinToggle")
         self._switch.setToolTip(
-            tr("Alternar a Ribbon sem alterar mapas ou dados. Atalho de recuperação: {shortcut}").format(shortcut=RECOVERY_SHORTCUT)
+            tr("Alternar a Ribbon sem alterar mapas ou dados. Atalho de recuperação: {shortcut}").format(
+                shortcut=RECOVERY_SHORTCUT)
         )
         self._switch.toggled.connect(self.set_enabled)
         # QgisInterface.viewMenu() is the native, translated View/Exibir menu.

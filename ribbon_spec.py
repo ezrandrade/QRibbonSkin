@@ -134,7 +134,8 @@ COMMAND_LABELS = {
 }
 
 COMMAND_TIPS = {
-    ALG + "native:selectbylocation": "Selecionar feições pela relação espacial com outra camada (algoritmo nativo do QGIS)",
+    ALG + "native:selectbylocation": ("Selecionar feições pela relação espacial com outra camada "
+                                      "(algoritmo nativo do QGIS)"),
     ALG + "native:saveselectedfeatures": "Criar uma camada com as feições selecionadas (algoritmo nativo do QGIS)",
     CLASSIC: "Desativar QRibbonSkin e restaurar as barras do QGIS",
     FOCUS_MAP: "Ocultar temporariamente os painéis; sem alterar o projeto",

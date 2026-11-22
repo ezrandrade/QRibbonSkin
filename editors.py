@@ -19,6 +19,8 @@ Light by design:
   emitted only on focus changes).
 """
 
+import sys
+
 from qgis.PyQt.QtCore import QObject, Qt, QTimer, QCoreApplication
 from qgis.PyQt.QtWidgets import QApplication, QMainWindow, QMenu, QSizePolicy, QToolBar
 
@@ -50,11 +52,12 @@ def _alive(obj):
 
 
 def _log(message):
+    """Warn in the QGIS log; fall back to stderr (logging must never raise)."""
     try:
         from qgis.core import QgsMessageLog, Qgis
         QgsMessageLog.logMessage(message, "QRibbonSkin", Qgis.MessageLevel.Warning)
-    except Exception:  # pragma: no cover - logging must never raise
-        pass
+    except (ImportError, AttributeError, RuntimeError):  # pragma: no cover
+        sys.stderr.write("QRibbonSkin: %s\n" % message)
 
 
 # --------------------------------------------------------------- layout items
