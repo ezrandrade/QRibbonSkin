@@ -65,7 +65,6 @@ PLUGIN = "qrs."
 CLASSIC = PLUGIN + "classic"
 FOCUS_MAP = PLUGIN + "focus_map"
 RESTORE_PANELS = PLUGIN + "restore_panels"
-PLUGIN_TOOLBARS = PLUGIN + "plugin_toolbars"
 COMMAND_SEARCH = PLUGIN + "command_search"
 TOGGLE_RIBBON = PLUGIN + "toggle_ribbon"
 # Processing algorithm dialogs (native QGIS algorithms, native dialogs).
@@ -113,7 +112,6 @@ COMMAND_ICONS = {
     CLASSIC: "qrs:classic_interface.svg",
     FOCUS_MAP: "qrs:focus_map.svg",
     RESTORE_PANELS: "/mDockify.svg",
-    PLUGIN_TOOLBARS: "/mActionInterfaceCustomization.svg",
     COMMAND_SEARCH: "/search.svg",
 }
 
@@ -123,7 +121,6 @@ COMMAND_LABELS = {
     CLASSIC: "Interface\nclássica",
     FOCUS_MAP: "Mapa em\nfoco",
     RESTORE_PANELS: "Restaurar painéis",
-    PLUGIN_TOOLBARS: "Barras de\ncomplementos",
     COMMAND_SEARCH: "Buscar\ncomandos",
 }
 
@@ -133,7 +130,6 @@ COMMAND_TIPS = {
     CLASSIC: "Desativar QRibbonSkin e restaurar as barras do QGIS",
     FOCUS_MAP: "Ocultar temporariamente os painéis; sem alterar o projeto",
     RESTORE_PANELS: "Restaurar visibilidade dos painéis anterior à Ribbon",
-    PLUGIN_TOOLBARS: "Comandos das barras de ferramentas de complementos instalados",
     COMMAND_SEARCH: "Buscar e executar qualquer comando do QGIS (Alt+Q)",
 }
 
@@ -159,6 +155,16 @@ TABS = (
 # Tabs that hold only *extra* content (RustGIS: Plugins shows plugin content):
 # their native dropdowns omit commands with a button on any tab.
 GLOBAL_DEDUP_TABS = ("plugins", "settings")
+
+# Native menus where QGIS puts plugin commands (QgisInterface.addPluginTo…Menu
+# creates one submenu per plugin in them).
+PLUGIN_SOURCE_MENUS = ("mPluginMenu", "mVectorMenu", "mRasterMenu", "mDatabaseMenu",
+                       "mWebMenu", "mMeshMenu", "mProcessingMenu")
+# Top-level menus of the QGIS menu bar; any other top-level menu is a plugin's.
+NATIVE_TOP_MENUS = frozenset(("mProjectMenu", "mEditMenu", "mViewMenu", "mLayerMenu",
+                              "mSettingsMenu", "mPluginMenu", "mVectorMenu", "mRasterMenu",
+                              "mDatabaseMenu", "mWebMenu", "mMeshMenu", "mProcessingMenu",
+                              "mHelpMenu", "mWindowMenu"))
 
 # Tabs whose groups depend on the layer selected in the Layers panel.
 LAYER_DEPENDENT_TABS = ("data", "style", "labeling")
@@ -392,12 +398,14 @@ GROUPS = {
               col(small("mActionShowPythonDialog", "Python"),
                   small("mActionEditFeaturesInPlace", "Editar no local"),
                   small("mActionQueryHistory", "Histórico SQL"))),
+        # "native:" = the QGIS menu without plugin entries: plugins have
+        # their own groups on the Plugins tab (RustGIS rule).
         group("Ferramentas",
-              menu("Vetor", "/mActionAddOgrLayer.svg", ("menu:mVectorMenu",)),
-              menu("Raster", "/mActionAddRasterLayer.svg", ("menu:mRasterMenu",)),
-              menu("Malha", "/mActionAddMeshLayer.svg", ("menu:mMeshMenu",)),
+              menu("Vetor", "/mActionAddOgrLayer.svg", ("native:mVectorMenu",)),
+              menu("Raster", "/mActionAddRasterLayer.svg", ("native:mRasterMenu",)),
+              menu("Malha", "/mActionAddMeshLayer.svg", ("native:mMeshMenu",)),
               menu("Banco de\ndados", "/propertyicons/database.svg",
-                   ("menu:mDatabaseMenu",))),
+                   ("native:mDatabaseMenu",))),
         group("Calculadoras",
               col(small("mActionShowRasterCalculator", "Calculadora raster"),
                   small("mActionShowMeshCalculator", "Calculadora de malha"))),
@@ -461,15 +469,11 @@ GROUPS = {
                   small("mActionDwgImport", "Importar DWG/DXF",
                         "/mActionSharingImport.svg"))),
     ),
+    # Then one group per installed plugin, built at run time from the menus
+    # and toolbars the plugin added (RustGIS: a group per enabled plugin).
     "plugins": (
         group("Complementos",
               big("mActionManagePlugins", "Gerenciar\ncomplementos")),
-        group("Menus de complementos",
-              menu("Complementos", "/propertyicons/plugins.svg", ("menu:mPluginMenu",)),
-              menu("Web", "/mIconWms.svg", ("menu:mWebMenu",))),
-        group("Barras",
-              menu(COMMAND_LABELS[PLUGIN_TOOLBARS], COMMAND_ICONS[PLUGIN_TOOLBARS],
-                   (PLUGIN_TOOLBARS,))),
     ),
     "settings": (
         group("Personalizar",

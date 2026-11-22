@@ -391,3 +391,11 @@ EN.update({
     'Zoom\ntotal': 'Zoom\nFull', 'Zoom 100%': 'Zoom 100%', 'Última feição': 'Last Feature',
     'Arquivo': 'File', 'Organizar': 'Arrange', 'Atlas': 'Atlas', 'Relatório': 'Report',
 })
+
+# QRibbonSkin 1.4.0: one group per plugin on the Plugins tab.
+EN.update({
+    'Outros complementos': 'Other plugins', 'Barra de\nferramentas': 'Toolbar',
+    'Barra de ferramentas': 'Toolbar', 'Complementos instalados': 'Installed plugins',
+    'Nenhum complemento com comandos está instalado ou ativo. Use Gerenciar complementos.':
+        'No plugin with commands is installed or enabled. Use Plugin Manager.',
+})

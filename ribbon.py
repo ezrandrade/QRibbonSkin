@@ -32,7 +32,7 @@ from qgis.PyQt.QtGui import (QAction, QColor, QFont, QFontMetrics, QIcon, QKeySe
 from qgis.PyQt.QtWidgets import (
     QDockWidget, QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMenu, QScrollArea, QSizePolicy, QStackedWidget, QStyle, QStyleOptionToolButton,
-    QStylePainter, QTabBar, QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QStylePainter, QTabBar, QToolBar, QToolButton, QVBoxLayout, QWidget, QWidgetAction,
 )
 
 from .i18n import tr
@@ -55,7 +55,34 @@ CORE_TOOLBARS = frozenset((
     "mWebToolBar", "mSnappingToolBar", "mDataSourceManagerToolBar",
     "mShapeDigitizeToolBar", "mSelectionToolBar", "mMeshToolBar",
     "mAnnotationsToolBar", "mLayerTreeToolBar", "QRibbonSkinToolbar",
+    "ProcessingAlgorithms",
 ))
+
+
+def qt_key(obj):
+    """Stable identity of a Qt object: its C++ address. id() is not stable
+    for objects created in C++, whose Python wrappers PyQt may recreate."""
+    try:
+        from qgis.PyQt import sip
+        return sip.unwrapinstance(obj)
+    except Exception:  # pragma: no cover
+        return id(obj)
+
+
+def is_native_action(action):
+    """True for QGIS's own commands (Processing algorithms included).
+
+    QGIS names its actions mAction… (qgisapp.ui/.cpp) and Processing menu
+    entries mProcessingUserMenu_<algorithm id> (qgsappprocessingutils.cpp);
+    plugin actions created by Python code have other or empty names. A
+    submenu is native when every command inside it is native.
+    """
+    sub = action.menu()
+    if sub is None:
+        name = action.objectName()
+        return name.startswith(("mAction", "mProcessing"))
+    leaves = [a for a in sub.actions() if not a.isSeparator()]
+    return bool(leaves) and all(is_native_action(a) for a in leaves)
 
 
 def clean_caption(text):
@@ -968,9 +995,13 @@ class RibbonFrame(QWidget):
     def _tab_id(self, index):
         return self.tabs.tabData(index)
 
+    def page_is_stale(self, tab_id):
+        """Subclasses: True when a built page must be rebuilt on show."""
+        return False
+
     def _page(self, tab_id):
         page = self._pages.get(tab_id)
-        if page is None or tab_id in self._dirty:
+        if page is None or tab_id in self._dirty or self.page_is_stale(tab_id):
             page = self._build_page(tab_id, page)
         return page
 
@@ -1012,6 +1043,10 @@ class RibbonFrame(QWidget):
         """Extra widgets placed before a tab's groups (hints)."""
         return []
 
+    def trailing_groups(self, tab_id):
+        """Extra group widgets placed after a tab's groups (run-time content)."""
+        return []
+
     def _build_page(self, tab_id, old=None):
         page = RibbonPage(self.pages)
         groups = self.visible_groups(tab_id)
@@ -1026,6 +1061,8 @@ class RibbonFrame(QWidget):
             widget = self._build_group(grp)
             if widget is not None:
                 page.add_group(widget)
+        for widget in self.trailing_groups(tab_id):
+            page.add_group(widget)
         page.row.addStretch(1)
         self.pages.addWidget(page)
         if old is not None:
@@ -1072,7 +1109,7 @@ class RibbonFrame(QWidget):
                     continue
                 names = [item["name"]] if "name" in item else []
                 entries = item.get("entries", ())
-                if not (len(entries) == 1 and entries[0].startswith("menu:")):
+                if not (len(entries) == 1 and entries[0].startswith(("menu:", "native:"))):
                     names += [e for e in entries if e != "-" and not e.startswith("menu:")]
                 for name in names:
                     action = self._resolve(name)
@@ -1080,14 +1117,21 @@ class RibbonFrame(QWidget):
                         claimed.add(action)
         return claimed
 
-    def _deduplicated(self, native, parent):
+    def _deduplicated(self, native, parent, native_only=False):
         """Show ``native`` without the actions claimed by this tab, or the
         native QMenu itself when nothing overlaps. The proxy is refilled from
         the live native menu each time it opens (plugin entries included);
         actions and submenus are referenced, never copied."""
         claimed = frozenset(self._claimed)
-        if not any(a in claimed for a in native.actions()):
+
+        def hidden(action):
+            return action in claimed or (native_only and not is_native_action(action))
+
+        if not any(hidden(a) for a in native.actions() if not a.isSeparator()):
             return native
+        if native_only and not any(not hidden(a) for a in native.actions()
+                                   if not a.isSeparator() and a.isVisible()):
+            return None  # nothing of QGIS's own left: no empty button
         proxy = QMenu(native.title(), parent)
 
         def refill():
@@ -1097,7 +1141,7 @@ class RibbonFrame(QWidget):
                 if action.isSeparator():
                     pending = bool(proxy.actions())
                     continue
-                if action in claimed or not action.isVisible():
+                if hidden(action) or not action.isVisible():
                     continue
                 if pending:
                     proxy.addSeparator()
@@ -1239,9 +1283,11 @@ class RibbonFrame(QWidget):
             special = self.special_menu(entries[0], parent)
             if special is not None:
                 return special
-            if entries[0].startswith("menu:"):
-                native = self._index.menu(entries[0][5:])
-                return None if native is None else self._deduplicated(native, parent)
+            if entries[0].startswith(("menu:", "native:")):
+                prefix, _sep, name = entries[0].partition(":")
+                native = self._index.menu(name)
+                return None if native is None else \
+                    self._deduplicated(native, parent, native_only=prefix == "native")
         menu = QMenu(parent)
         pending_separator = False
         for entry in entries:
@@ -1334,9 +1380,9 @@ class RibbonFrame(QWidget):
                 if sub is not None:
                     visit(sub.actions())
                     continue
-                if id(action) in seen or action.shortcut().isEmpty():
+                if qt_key(action) in seen or action.shortcut().isEmpty():
                     continue
-                seen.add(id(action))
+                seen.add(qt_key(action))
                 self.addAction(action)
 
         menu_bar = self._window.menuBar()
@@ -1447,29 +1493,169 @@ class RibbonWidget(RibbonFrame):
             return [self.hint_group(texts[tab_id])]
         return []
 
-    def special_menu(self, entry, parent):
-        if entry == spec.PLUGIN_TOOLBARS:
-            menu = QMenu(parent)
-            menu.aboutToShow.connect(lambda m=menu: self._fill_plugin_toolbars(m))
-            return menu
-        return None
 
-    def _fill_plugin_toolbars(self, menu):
-        """List the commands of third-party toolbars, read when opened."""
-        menu.clear()
+    # ------------------------------------------------------------ plugins
+    def _plugin_fingerprint(self):
+        """Cheap identity of everything plugins added (menus and toolbars)."""
+        ids = []
+        for name in spec.PLUGIN_SOURCE_MENUS:
+            native = self._index.menu(name)
+            if native is not None:
+                ids.extend(qt_key(a) for a in native.actions())
+        menu_bar = self._window.menuBar()
+        if menu_bar is not None:
+            ids.extend(qt_key(a) for a in menu_bar.actions())
         for bar in self._window.findChildren(QToolBar):
-            if bar.parent() is not self._window or bar.objectName() in CORE_TOOLBARS:
-                continue
-            actions = [a for a in bar.actions() if not a.isSeparator()
-                       and (a.menu() is not None or clean_caption(a.text()))]
-            if not actions:
-                continue
-            sub = menu.addMenu(bar.windowTitle() or bar.objectName())
+            if bar.parent() is self._window and not bar.objectName().startswith("QRibbonSkin"):
+                ids.append(qt_key(bar))
+                ids.extend(qt_key(a) for a in bar.actions())
+        return tuple(ids)
+
+    def page_is_stale(self, tab_id):
+        # A plugin installed, enabled or removed since the tab was built.
+        return (tab_id == "plugins" and tab_id in self._pages
+                and getattr(self, "_plugin_print", None) != self._plugin_fingerprint())
+
+    def collect_plugins(self):
+        """Group the commands plugins added to QGIS, one group per plugin.
+
+        QGIS gives each plugin its own submenu in the Plugins, Vector, Raster,
+        Database, Web, Mesh and Processing menus (addPluginTo…Menu); a plugin
+        may also add a top-level menu or its own toolbar. QGIS's own entries
+        (mAction…, Processing's mProcessingUserMenu_…) are left out. The same
+        QAction found in a menu and in a toolbar is shown once.
+        Returns [{"title", "actions": [QAction], "toolbar": QToolBar|None}].
+        """
+        groups, order, seen = {}, [], set()
+
+        def group(title):
+            key = fold(clean_caption(title))
+            if key not in groups:
+                groups[key] = {"title": clean_caption(title), "actions": [], "toolbar": None}
+                order.append(key)
+            return groups[key]
+
+        def take(target, actions):
             for action in actions:
-                sub.addAction(action)
-        if not menu.actions():
-            empty = menu.addAction(tr("Nenhuma barra de complementos"))
-            empty.setEnabled(False)
+                if (action.isSeparator() or not action.isVisible() or qt_key(action) in seen
+                        or isinstance(action, QWidgetAction) or is_native_action(action)
+                        or not (clean_caption(action.text()) or action.menu() is not None)):
+                    continue
+                seen.add(qt_key(action))
+                target["actions"].append(action)
+
+        others = tr("Outros complementos")
+        for name in spec.PLUGIN_SOURCE_MENUS:
+            native = self._index.menu(name)
+            if native is None:
+                continue
+            for entry in native.actions():
+                if entry.isSeparator() or is_native_action(entry):
+                    continue
+                sub = entry.menu()
+                if sub is not None:
+                    take(group(sub.title() or entry.text()), sub.actions())
+                else:
+                    take(group(others), [entry])
+        menu_bar = self._window.menuBar()
+        if menu_bar is not None:
+            for entry in menu_bar.actions():
+                sub = entry.menu()
+                if (sub is not None and sub.objectName() not in spec.NATIVE_TOP_MENUS
+                        and not is_native_action(entry)):
+                    take(group(sub.title() or entry.text()), sub.actions())
+        for bar in self._window.findChildren(QToolBar):
+            if bar.parent() is not self._window:
+                continue
+            name = bar.objectName()
+            if name.startswith("QRibbonSkin") or name == "ProcessingAlgorithms":
+                continue
+            actions = list(bar.actions())
+            if name in CORE_TOOLBARS:
+                take(group(others), actions)  # addToolBarIcon & co.
+                continue
+            # A plugin toolbar joins the group of the menu entries it repeats.
+            keys = {qt_key(a) for a in actions}
+            owner = next((groups[k] for k in order
+                          if any(qt_key(a) in keys for a in groups[k]["actions"])), None)
+            target = owner or group(bar.windowTitle() or name)
+            take(target, actions)
+            if any(isinstance(a, QWidgetAction) for a in actions):
+                target["toolbar"] = bar  # controls that only work on the bar
+        result = [groups[k] for k in order if groups[k]["actions"] or groups[k]["toolbar"]]
+        result.sort(key=lambda g: (g["title"] == others, fold(g["title"])))
+        return result
+
+    def _plugin_button(self, action, size, parent):
+        caption = clean_caption(action.text())
+        if size == "big":
+            caption = self._two_lines(caption)
+        sub = action.menu()
+        if sub is not None:
+            icon = action.icon() if not action.icon().isNull() else sub.icon()
+            if icon.isNull():
+                icon = theme_icon("/propertyicons/plugins.svg")
+            button = RibbonButton(self._m, size, caption, icon, None, parent)
+            button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            button.setMenu(sub)
+            button.setToolTip(clean_caption(action.text()))
+        else:
+            button = RibbonButton(self._m, size, caption,
+                                  theme_icon("/propertyicons/plugins.svg"), action, parent)
+        button.triggered.connect(self._end_peek)
+        return button
+
+    def _plugin_group(self, entry):
+        """One plugin: up to 4 commands as big buttons (RustGIS), beyond that
+        two big and the rest in columns of three small ones."""
+        grp = RibbonGroup(self._m, entry["title"])
+        actions = list(entry["actions"])
+        extras = []
+        if entry["toolbar"] is not None:
+            # The bar's own show/hide QAction (never modified): for plugin
+            # controls such as combo boxes, which only work on the bar.
+            extras.append(entry["toolbar"].toggleViewAction())
+        bar_icon = theme_icon("/mActionInterfaceCustomization.svg")
+        bigs, rest = (actions, []) if len(actions) <= 4 else (actions[:2], actions[2:])
+        for action in bigs:
+            grp.add(self._plugin_button(action, "big", grp))
+        rest += extras
+        for start in range(0, len(rest), 3):
+            chunk = rest[start:start + 3]
+            if len(chunk) == 1:  # never a lone small button
+                if chunk[0] in extras:
+                    button = RibbonButton(self._m, "big", tr("Barra de\nferramentas"),
+                                          bar_icon, chunk[0], grp)
+                else:
+                    button = self._plugin_button(chunk[0], "big", grp)
+                grp.add(button)
+                continue
+            column = QWidget(grp)
+            layout = QVBoxLayout(column)
+            layout.setContentsMargins(0, 1, 0, 0)
+            layout.setSpacing(1)
+            layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            for action in chunk:
+                if action in extras:
+                    button = RibbonButton(self._m, "small", tr("Barra de ferramentas"),
+                                          bar_icon, action, column)
+                else:
+                    button = self._plugin_button(action, "small", column)
+                layout.addWidget(button)
+            grp.add(column)
+        return grp
+
+    def trailing_groups(self, tab_id):
+        if tab_id != "plugins":
+            return []
+        self._plugin_print = self._plugin_fingerprint()
+        entries = self.collect_plugins()
+        if not entries:
+            hint = self.hint_group("Nenhum complemento com comandos está instalado ou ativo. "
+                                   "Use Gerenciar complementos.")
+            hint.label.setText(tr("Complementos instalados"))
+            return [hint]
+        return [self._plugin_group(e) for e in entries]
 
     def _current_layer_kind(self):
         try:
