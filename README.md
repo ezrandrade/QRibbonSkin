@@ -1,6 +1,14 @@
-# QRibbonSkin 1.6.0
+# QRibbonSkin
 
-O **QRibbonSkin** oferece ao **QGIS 3.44 LTR** e ao **QGIS 4.x** uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, e a **página inicial original do QGIS** é preservada.
+![Identidade visual do QRibbonSkin](docs/branding/qribbonskin-banner-github.svg)
+
+**Uma interface Ribbon para o QGIS 3.44 LTR e o QGIS 4.x, organizada a partir das ferramentas nativas do próprio QGIS.**
+
+**Versão atual: 1.6.0.** Versões publicadas: [Releases](https://github.com/ezrandrade/QRibbonSkin/releases).
+
+O **QRibbonSkin** oferece ao **QGIS 3.44 LTR** e ao **QGIS 4.x** uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, não altera os dados cartográficos e preserva a **página inicial original do QGIS**.
+
+> **Importante:** o QRibbonSkin é um projeto próprio. Os créditos relativos a referências e recursos derivados estão registrados em [ATTRIBUTION.md](ATTRIBUTION.md).
 
 ## Recursos
 
@@ -20,6 +28,30 @@ O **QRibbonSkin** oferece ao **QGIS 3.44 LTR** e ao **QGIS 4.x** uma interface R
 - Retorno à interface clássica (Configurações → Interface clássica, ou Ctrl+Alt+Shift+R) e recuperação de barras e painéis.
 
 Ícones: usados os do tema do QGIS (`QgsApplication.getThemeIcon`). Apenas três comandos sem equivalente no QGIS (Interface clássica, Mapa em foco e Recolher a Ribbon) usam ícones novos, desenhados na grade 24×24 e na paleta dos ícones do QGIS (`resources/icons/qgis_style`).
+
+## Janelas de edição
+
+O **Compositor de Layout**, o **Georreferenciador** e o **Designer de Modelos** recebem a mesma Ribbon da janela principal: mesmo componente, ícones nativos em 24 px, cores do tema do QGIS, Spotlight (**Alt+Q**) e a mesma regra contra redundâncias. Cada janela tem seu botão no estilo "Projeto" (**Layout**, **Arquivo**, **Modelo**).
+
+- **Layout:** a guia Início segue os grupos de layout do RustGIS (Página, Quadros de mapa, Elementos de mapa, Formas, Texto e imagens, Exportar). Os botões de inserir itens vêm do registro de itens do QGIS e são classificados pelo tipo do item, com os nomes traduzidos pelo próprio QGIS. As guias **Atlas** e **Relatório** aparecem conforme o tipo de documento aberto.
+- **Georreferenciador:** pontos de controle, transformação e navegação na guia Início; vínculo com o QGIS e realce em Exibir.
+- **Designer de Modelos:** a ordem segue a barra do ModelBuilder do RustGIS (executar, editar, organizar, navegar).
+
+As barras e menus originais de cada janela ficam apenas ocultos (**Configurações → Barras nativas** os mostra novamente) e são restaurados ao fechar a janela ou desativar o QRibbonSkin; nenhuma ação é removida delas e nenhum painel é estilizado.
+
+**English:** the Layout Designer, Georeferencer and Model Designer share the main window's Ribbon component (native icons, theme colours, Alt+Q Spotlight). Native toolbars are only hidden and are restored on close; nothing is removed from them.
+
+## Tabela de atributos
+
+A **tabela de atributos** recebe a mesma Ribbon, com as guias **Início** (Edição, Feições, Área de transferência, Seleção, Mapa, Ações), **Campos** (Estrutura de dados, Exibição) e **Configurações**. Só aparecem os comandos que o QGIS deixa na barra da tabela para aquela camada (sem permissão de exclusão, por exemplo, *Excluir* e *Recortar* não aparecem), e o botão *Ações* só aparece quando a camada tem ações de feição. Os atalhos próprios da tabela (Ctrl+E, Ctrl+F, Del…) continuam funcionando.
+
+Quando a tabela está **acoplada** à janela principal, a Ribbon começa recolhida (um clique numa guia a mostra) e Alt+Q/Ctrl+F1 ficam com a Ribbon principal, sem conflito de atalhos; ao desacoplar, volta expandida. A barra original da tabela fica apenas oculta (**Configurações → Barras nativas**) e é devolvida ao desativar o QRibbonSkin.
+
+**English:** the attribute table gets the same Ribbon (floating or docked); only commands QGIS keeps on the table toolbar for the layer are shown, table shortcuts keep working, and the native toolbar is restored on exit.
+
+## Resolução de tela
+
+A resolução recomendada para melhor experiência de uso é **1920 × 1080 pixels (Full HD/1080p) ou superior**. O QRibbonSkin também funciona em resoluções inferiores, com maior necessidade de rolagem horizontal da Ribbon (setas nas bordas ou roda do mouse) e possibilidade de recolhê-la (**Ctrl+F1**). **A resolução de 800 × 600 pixels não é recomendada.** Trata-se de uma recomendação de ergonomia, não de um bloqueio técnico.
 
 ## Compatibilidade verificada
 
@@ -51,31 +83,18 @@ Essas validações foram comunicadas pelo responsável pelos testes; não consti
 
 Use a guia **Início** para navegar, adicionar dados, selecionar, medir e identificar; **Dados**, **Estilo** e **Rotulagem** para a camada selecionada; **Editar** para edição vetorial; **Analisar** para a Caixa de Ferramentas, o Designer de Modelos e os menus Vetor/Raster/Malha/Banco de dados; **Exibir** para painéis, decorações e vistas; **Publicar** para layouts, relatórios e exportação; **Complementos** para o gerenciador e um botão por complemento instalado.
 
-## Licença e créditos
+## Contribuições e relato de problemas
 
-Consulte `LICENSE` e `ATTRIBUTION.md`. A arquitetura reversível foi inspirada no ArcSkin, com a atribuição preservada. O estilo de interface foi influenciado visualmente pelo RustGIS, sem incorporar seu código.
+O código-fonte está disponível neste repositório. Problemas de interface, incompatibilidades e sugestões de melhoria podem ser registrados em [Issues](https://github.com/ezrandrade/QRibbonSkin/issues). Ao relatar um problema, informe a versão do QGIS, o sistema operacional, a versão do complemento e os passos necessários para reproduzir a ocorrência.
 
-## Código-fonte, suporte e publicação
+## Autoria, atribuições e licença
 
-Código-fonte e rastreador de problemas: https://github.com/ezrandrade/QRibbonSkin (endereços declarados em `metadata.txt`).
+**Autor do QRibbonSkin:** Esdras Andrade.
 
+A arquitetura reversível de interface foi inspirada no ArcSkin, e a disposição da Ribbon segue a interface do RustGIS, sem cópia de código ou recursos; as referências estão discriminadas em [ATTRIBUTION.md](ATTRIBUTION.md). Desde a versão 1.3.1 o pacote não contém ícones derivados do ArcSkin: os ícones exibidos são os do tema do QGIS e três desenhos próprios no padrão QGIS. Essas atribuições não tornam as funcionalidades dos projetos equivalentes.
 
-### Janelas de edição / Editor windows (v1.3.0)
+O QRibbonSkin é distribuído sob os termos da licença constante em [LICENSE](LICENSE) (**GNU GPL v2**).
 
-O **Compositor de Layout**, o **Georreferenciador** e o **Designer de Modelos** recebem a mesma Ribbon da janela principal: mesmo componente, ícones nativos em 24 px, cores do tema do QGIS, Spotlight (**Alt+Q**) e a mesma regra contra redundâncias. Cada janela tem seu botão no estilo "Projeto" (**Layout**, **Arquivo**, **Modelo**).
+---
 
-- **Layout:** a guia Início segue os grupos de layout do RustGIS (Página, Quadros de mapa, Elementos de mapa, Formas, Texto e imagens, Exportar). Os botões de inserir itens vêm do registro de itens do QGIS e são classificados pelo tipo do item, com os nomes traduzidos pelo próprio QGIS. As guias **Atlas** e **Relatório** aparecem conforme o tipo de documento aberto.
-- **Georreferenciador:** pontos de controle, transformação e navegação na guia Início; vínculo com o QGIS e realce em Exibir.
-- **Designer de Modelos:** a ordem segue a barra do ModelBuilder do RustGIS (executar, editar, organizar, navegar).
-
-As barras e menus originais de cada janela ficam apenas ocultos (**Configurações → Barras nativas** os mostra novamente) e são restaurados ao fechar a janela ou desativar o QRibbonSkin; nenhuma ação é removida delas e nenhum painel é estilizado.
-
-### Tabela de atributos / Attribute table (v1.6.0)
-
-A **tabela de atributos** recebe a mesma Ribbon, com as guias **Início** (Edição, Feições, Área de transferência, Seleção, Mapa, Ações), **Campos** (Estrutura de dados, Exibição) e **Configurações**. Só aparecem os comandos que o QGIS deixa na barra da tabela para aquela camada (sem permissão de exclusão, por exemplo, *Excluir* e *Recortar* não aparecem), e o botão *Ações* só aparece quando a camada tem ações de feição. Os atalhos próprios da tabela (Ctrl+E, Ctrl+F, Del…) continuam funcionando.
-
-Quando a tabela está **acoplada** à janela principal, a Ribbon começa recolhida (um clique numa guia a mostra) e Alt+Q/Ctrl+F1 ficam com a Ribbon principal, sem conflito de atalhos; ao desacoplar, volta expandida. A barra original da tabela fica apenas oculta (**Configurações → Barras nativas**) e é devolvida ao desativar o QRibbonSkin.
-
-**English:** the attribute table gets the same Ribbon (floating or docked); only commands QGIS keeps on the table toolbar for the layer are shown, table shortcuts keep working, and the native toolbar is restored on exit.
-
-**English:** the Layout Designer, Georeferencer and Model Designer share the main window's Ribbon component (native icons, theme colours, Alt+Q Spotlight). Native toolbars are only hidden and are restored on close; nothing is removed from them.
+**QRibbonSkin — interface reorganizada, ferramentas nativas do QGIS.**
