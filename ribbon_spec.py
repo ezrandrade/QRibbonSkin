@@ -179,9 +179,11 @@ PROJECT_BUTTON = ("Projeto", "Abrir, salvar e criar projetos")
 # 1. Inside one tab a command appears once. Native menus used as dropdowns
 #    are shown *without* the commands that already have a button on the same
 #    tab (see the Ribbon's de-duplicated menu proxy).
-# 2. Across tabs, only the repetitions RustGIS also makes: attribute table,
-#    selection by attributes/location, clear selection, and View › Windows
-#    mirroring the panels used on other tabs.
+# 2. Across tabs, only commands that serve the other tab's work: the
+#    repetitions RustGIS makes (attribute table, selection by attributes/
+#    location, View › Windows mirroring the panels used on other tabs) and
+#    the Select tool on Edit, since editing acts on the selected features
+#    (ArcGIS Pro, RustGIS's model, has it there too).
 # 3. The Plugins tab manages plugins once and shows only plugin content.
 GROUPS = {
     PROJECT_TAB: (
@@ -360,6 +362,11 @@ GROUPS = {
               col(small("ToggleTracing", "Traçado", "/mActionTracing.svg"),
                   small("ShowAdvancedDigitizingPanel", "Digitalização avançada",
                         "/cadtools/cad.svg"))),
+        group("Seleção",
+              split("mActionSelectFeatures",
+                    ("mActionSelectFeatures", "mActionSelectPolygon",
+                     "mActionSelectFreehand", "mActionSelectRadius"),
+                    "Selecionar")),
         group("Feições",
               split("mActionAddFeature",
                     ("mActionAddFeature", "-", "mActionDigitizeWithSegment",
