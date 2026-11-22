@@ -416,6 +416,32 @@ class RibbonGroup(QWidget):
         painter.end()
 
 
+class RibbonTabBar(QTabBar):
+    """Tab bar whose tabs always fit their caption in the *selected* style.
+
+    The style sheet shows the active tab semi-bold. Qt6 sizes tabs with the
+    selected-state font, but Qt5 (QGIS 3.44) sizes them with the regular
+    font, so the bold caption was clipped at both ends. Each tab is therefore
+    sized from its semi-bold width plus the style sheet's horizontal padding.
+    """
+
+    PADDING = 13   # QTabBar#QRibbonSkinTabs::tab { padding: … 13px }
+    SLACK = 6      # borders, margins and rounding
+
+    def tabSizeHint(self, index):  # noqa: N802
+        size = super().tabSizeHint(index)
+        bold = QFont(self.font())
+        bold.setWeight(QFont.Weight.DemiBold)
+        need = (QFontMetrics(bold).horizontalAdvance(self.tabText(index))
+                + 2 * self.PADDING + self.SLACK)
+        if size.width() < need:
+            size.setWidth(need)
+        return size
+
+    def minimumTabSizeHint(self, index):  # noqa: N802
+        return self.tabSizeHint(index)  # never elide or squeeze a caption
+
+
 class ScrollArrow(QToolButton):
     """Left/right arrow at the edge of an overflowing Ribbon (RustGIS)."""
 
@@ -975,7 +1001,7 @@ class RibbonFrame(QWidget):
             self.project_button.setFixedHeight(min(26, self._m.tab_h - 4))
             self.project_button.clicked.connect(self._on_project_clicked)
             row.addWidget(self.project_button, 0, Qt.AlignmentFlag.AlignVCenter)
-        self.tabs = QTabBar(strip)
+        self.tabs = RibbonTabBar(strip)
         self.tabs.setObjectName("QRibbonSkinTabs")
         self.tabs.setDrawBase(False)
         self.tabs.setExpanding(False)
