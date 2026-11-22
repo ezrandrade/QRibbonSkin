@@ -1,4 +1,4 @@
-# QRibbonSkin 1.3.0
+# QRibbonSkin 1.3.1
 
 O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, e a **página inicial original do QGIS** é preservada.
 
@@ -18,7 +18,7 @@ O **QRibbonSkin** oferece ao QGIS 4.x uma interface Ribbon reversível com a **m
 - Leve: sem temporizadores e sem filtros de eventos globais; janelas detectadas por sinais do QGIS, mudança de foco e criação de barras; guias montadas sob demanda.
 - Retorno à interface clássica (Configurações → Interface clássica, ou Ctrl+Alt+Shift+R) e recuperação de barras e painéis.
 
-Ícones: usados os do tema do QGIS (`QgsApplication.getThemeIcon`). Apenas os comandos próprios do complemento sem equivalente no QGIS (Interface clássica, Mapa em foco) usam ícones novos, desenhados na grade 24×24 e na paleta dos ícones do QGIS (`resources/icons/qgis_style`).
+Ícones: usados os do tema do QGIS (`QgsApplication.getThemeIcon`). Apenas três comandos sem equivalente no QGIS (Interface clássica, Mapa em foco e Recolher a Ribbon) usam ícones novos, desenhados na grade 24×24 e na paleta dos ícones do QGIS (`resources/icons/qgis_style`).
 
 ## Compatibilidade verificada
 
@@ -42,7 +42,7 @@ Use a guia **Início** para navegar, adicionar dados, selecionar, medir e identi
 
 ## Licença e créditos
 
-Consulte `LICENSE` e `ATTRIBUTION.md`. A implementação contém trabalho derivado/inspirado no ArcSkin, com as atribuições preservadas. O estilo de interface foi influenciado visualmente pelo RustGIS, sem incorporar seu código.
+Consulte `LICENSE` e `ATTRIBUTION.md`. A arquitetura reversível foi inspirada no ArcSkin, com a atribuição preservada. O estilo de interface foi influenciado visualmente pelo RustGIS, sem incorporar seu código.
 
 ## Código-fonte, suporte e publicação
 

@@ -217,14 +217,6 @@ def tr(text):
     return EN.get(text, text)
 
 
-def ui_label(text):
-    """Translate and sentence-case only labels created by QRibbonSkin.
-
-    QGIS-owned QAction titles and menus must use their original strings, not
-    this function. Internal routing keys are intentionally left untouched.
-    """
-    from .ux_rules import sentence_label
-    return sentence_label(tr(text))
 
 
 # QRibbonSkin 1.2 main Ribbon (RustGIS layout). English captions follow the

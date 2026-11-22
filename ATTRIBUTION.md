@@ -1,46 +1,35 @@
-# Atribuições dos ícones — QRibbonSkin
+# Atribuições — QRibbonSkin
 
-- Os arquivos em `resources/icons/` cujo nome corresponde a ícones presentes em
-  `arcskin/resources/icons/pro/` (veja a lista abaixo) são **reproduções dos desenhos SVG**
-  de **ArcSkin**, por **EnviroSolutions**: https://github.com/envirosolutionspl/arcskin .
-  A origem está sob **GNU GPL versão 2**; o pacote QRibbonSkin permanece GPL-2.0.
-  Arquivos ArcSkin recuperados em 23 de outubro de 2026.
-- Os ícones `command.svg`, `view.svg`, `file.svg`, `layer.svg`, `web.svg`,
-  `print.svg`, `add.svg`, `undo.svg`, `filter.svg`, `share.svg`, `coordinates.svg`,
-  `edit_note.svg` e `recent_projects.svg` são desenhos originais do QRibbonSkin com traços neutros e leves.
-  Sua estética é *inspirada* em RustGIS (https://github.com/opengeos/RustGIS),
-  **sem copiar** código-fonte, desenhos ou recursos deste projeto.
-- Ícones nativos de QGIS/QAction têm prioridade; são apenas lidos em execução,
-  sem alteração da instalação do QGIS.
+## ArcSkin (código)
 
-**Arquivos derivados do ArcSkin**:
-- `attribute_table.svg`
-- `basemap.svg`
-- `catalog.svg`
-- `database.svg`
-- `edit.svg`
-- `field_calculator.svg`
-- `geoprocessing.svg`
-- `help.svg`
-- `identify.svg`
-- `labeling.svg`
-- `map_3d.svg`
-- `measure.svg`
-- `new_project.svg`
-- `open_project.svg`
-- `pan.svg`
-- `panes.svg`
-- `plugins.svg`
-- `raster_tools.svg`
-- `refresh.svg`
-- `save_project.svg`
-- `select.svg`
-- `statistics.svg`
-- `style_manager.svg`
-- `tool.svg`
-- `toolbars.svg`
-- `vector_tools.svg`
-- `zoom_in.svg`
-- `zoom_out.svg`
+A arquitetura reversível de interface do QRibbonSkin (ocultar e restaurar a
+barra de menus, as barras de ferramentas e os painéis do QGIS sem alterar
+projetos, camadas ou algoritmos) foi inspirada em **ArcSkin**, por
+**EnviroSolutions**: https://github.com/envirosolutionspl/arcskin .
+A origem está sob **GNU GPL versão 2**; o QRibbonSkin permanece GPL-2.0.
 
-A autoria dos ícones originais pertence aos respectivos titulares.
+Até a versão 1.3.0, o pacote incluía ícones SVG reproduzidos do ArcSkin
+(`resources/icons/`). A partir da versão 1.3.1 eles foram removidos, pois
+deixaram de ser usados.
+
+## RustGIS (disposição da interface)
+
+A disposição da Ribbon (botão Projeto, barra de acesso rápido, busca de
+comandos, guias, grupos e tamanhos de controles) segue a interface do
+**RustGIS**: https://github.com/opengeos/RustGIS . Nenhum código-fonte,
+ícone ou recurso do RustGIS foi copiado.
+
+## Ícones
+
+- Todos os ícones exibidos são os do **tema ativo do QGIS**
+  (`QgsApplication.getThemeIcon`) ou os das próprias ações do QGIS, lidos em
+  execução, sem alterar a instalação do QGIS.
+- Três ícones sem equivalente no QGIS foram desenhados para o QRibbonSkin na
+  grade de 24×24 px e na paleta dos ícones do QGIS:
+  `resources/icons/qgis_style/classic_interface.svg`,
+  `resources/icons/qgis_style/focus_map.svg` e
+  `resources/icons/qgis_style/chevron_up.svg`.
+- `resources/qribbonskin.svg` e `resources/qribbonskin_toolbar.svg` são os
+  ícones do próprio complemento.
+
+A autoria dos ícones do QGIS pertence ao projeto QGIS.
