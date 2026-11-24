@@ -301,7 +301,11 @@ class RibbonButton(QToolButton):
             self.setFixedSize(max(48, width + 14), self._m.big_h)
         else:
             text = metrics.horizontalAdvance(self._caption) + 8 if self._caption else 0
-            extra = 12 if self.menu() is not None else 0
+            # A native action with its own menu (e.g. Enable Tracing) gets the
+            # style's menu indicator too: leave room for it after the caption.
+            action = self.defaultAction()
+            has_menu = self.menu() is not None or (action is not None and action.menu() is not None)
+            extra = 12 if has_menu else 0
             self.setFixedSize(SMALL_ICON + 8 + text + extra, self._m.small_h)
 
     def setMenu(self, menu):  # noqa: N802
@@ -1615,7 +1619,8 @@ class RibbonWidget(RibbonFrame):
                 continue
             actions = list(bar.actions())
             if name in CORE_TOOLBARS:
-                take(group(others), actions)  # addToolBarIcon & co.
+                if name in spec.PLUGIN_HOST_TOOLBARS:
+                    take(group(others), actions)  # addToolBarIcon & co.
                 continue
             # A plugin toolbar joins the group of the menu entries it repeats.
             keys = {qt_key(a) for a in actions}

@@ -2,7 +2,7 @@
 
 Documento de passagem para retomar o desenvolvimento, por uma pessoa ou por um assistente de IA. Fica em `docs/`, que não entra no pacote do complemento (`.gitattributes`).
 
-Situação em 22/11/2026: **desenvolvimento encerrado na versão 1.6.2**, homologada pelo autor.
+Situação em 24/11/2026: versão **1.6.3** (correção da guia Editar > Aderência) aguardando homologação; a 1.6.2 foi homologada pelo autor.
 
 ## 1. O que é
 
@@ -39,6 +39,7 @@ Complemento do QGIS que troca menus e barras por uma **Ribbon com a disposição
 6. **Sem linha escura** sob a Ribbon. As cores vêm da paleta do tema ativo, inclusive nos temas escuros.
 7. **Spotlight** é um painel dentro da janela do QGIS, e não um popup de nível superior, porque no sistema do autor o popup não aparecia centralizado. Abre só com o campo de busca, centralizado, e os resultados crescem para baixo, até 8 linhas.
 8. **Leveza:** nada de filtros de eventos globais nem de temporizadores. A detecção usa sinais do QGIS, `QApplication.focusChanged`, o `triggered` das ações que abrem janelas e o evento `ChildAdded` da janela principal.
+10. **Comandos nativos fora de Complementos:** só as barras do QGIS que recebem botões de complementos (`PLUGIN_HOST_TOOLBARS`: Complementos, Raster, Vetor, Banco de dados, Web) alimentam "Outros complementos". As demais barras do QGIS têm comandos nativos sem prefixo `mAction` (aderência: `EnableSnappingAction`, `TopologicalEditingAction`, `IntersectionSnappingAction`, `EnableTracingAction`, `SelfSnappingAction`), que ficam no grupo Aderência da guia Editar. `ToggleTracing` é um atalho de depuração do QGIS, não o traçado.
 9. **Painéis:** ao desligar o complemento ou fechar o QGIS, só se restauram os painéis que o próprio QRibbonSkin ocultou (modo Mapa em foco). Esse foi o bug corrigido na 1.6.2: o Navegador reabria a cada inicialização.
 
 ## 4. Arquitetura (cerca de 4.800 linhas)
