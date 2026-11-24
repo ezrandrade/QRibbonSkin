@@ -168,12 +168,6 @@ GLOBAL_DEDUP_TABS = ("plugins", "settings")
 
 # Native menus where QGIS puts plugin commands (QgisInterface.addPluginTo…Menu
 # creates one submenu per plugin in them).
-# QGIS toolbars that host plugin buttons (iface.addToolBarIcon and the
-# Raster/Vector/Database/Web variants). Every other QGIS toolbar holds only
-# QGIS's own commands, some of them without the mAction prefix (snapping,
-# annotations, advanced digitizing, mesh editing).
-PLUGIN_HOST_TOOLBARS = frozenset(("mPluginToolBar", "mRasterToolBar", "mVectorToolBar",
-                                  "mDatabaseToolBar", "mWebToolBar"))
 PLUGIN_SOURCE_MENUS = ("mPluginMenu", "mVectorMenu", "mRasterMenu", "mDatabaseMenu",
                        "mWebMenu", "mMeshMenu", "mProcessingMenu")
 # Top-level menus of the QGIS menu bar; any other top-level menu is a plugin's.
@@ -375,16 +369,9 @@ GROUPS = {
                     ("mActionPasteFeatures", "menu:mMenuPasteAs"), "Colar"),
               col(small("mActionCutFeatures", "Recortar"),
                   small("mActionCopyFeatures", "Copiar"))),
-        # Snapping toolbar commands (QgsSnappingWidget, same names in 3.44 and 4.x).
         group("Aderência",
-              big("EnableSnappingAction", "Aderência", "/mIconSnapping.svg"),
-              col(small("TopologicalEditingAction", "Edição topológica",
-                        "/mIconTopologicalEditing.svg"),
-                  small("IntersectionSnappingAction", "Na interseção",
-                        "/mIconSnappingIntersection.svg"),
-                  small("SelfSnappingAction", "Autoaderência", "/mIconSnappingSelf.svg")),
-              col(small("EnableTracingAction", "Traçado", "/mActionTracing.svg"),
-                  small("mActionSnappingOptions", "Opções", "/mIconSnapping.svg"),
+              big("mActionSnappingOptions", "Aderência", "/mIconSnapping.svg"),
+              col(small("ToggleTracing", "Traçado", "/mActionTracing.svg"),
                   small("ShowAdvancedDigitizingPanel", "Digitalização avançada",
                         "/cadtools/cad.svg"))),
         group("Seleção",

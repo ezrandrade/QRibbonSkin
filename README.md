@@ -4,7 +4,7 @@
 
 **Uma interface Ribbon para o QGIS 3.44 LTR e o QGIS 4.x, organizada a partir das ferramentas nativas do próprio QGIS.**
 
-**Versão atual: 1.6.3.** Versões publicadas: [Releases](https://github.com/ezrandrade/QRibbonSkin/releases).
+**Versão atual: 1.6.2.** Versões publicadas: [Releases](https://github.com/ezrandrade/QRibbonSkin/releases).
 
 O **QRibbonSkin** oferece ao **QGIS 3.44 LTR** e ao **QGIS 4.x** uma interface Ribbon reversível com a **mesma disposição da Ribbon do RustGIS**, construída exclusivamente com comandos, menus, ícones e cores **nativos do QGIS**. Não substitui nem altera os algoritmos de geoprocessamento, não altera os dados cartográficos e preserva a **página inicial original do QGIS**.
 
